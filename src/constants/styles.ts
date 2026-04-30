@@ -1,0 +1,77 @@
+export const STYLE_OPTIONS = [
+  '变快',
+  '变慢',
+  '开心',
+  '悲伤',
+  '生气',
+  '温柔',
+  '激动',
+  '严肃',
+  '悬疑',
+  '治愈',
+  '热血',
+  '播音腔',
+  '少年感',
+  '成熟感',
+  '故事感',
+  '科技感',
+  '广告感',
+  '孙悟空',
+  '林黛玉',
+  '悄悄话',
+  '夹子音',
+  '台湾腔',
+  '东北话',
+  '四川话',
+  '河南话',
+  '陕西话',
+  '粤语',
+  '唱歌',
+];
+
+export const AUDIO_TAG_OPTIONS = [
+  '（紧张，深呼吸）',
+  '（语速加快，碎碎念）',
+  '（小声）',
+  '（沉默片刻）',
+  '（苦笑）',
+  '（长叹一口气）',
+  '（寒冷导致的急促呼吸）',
+  '（咳嗽）',
+  '（提高音量喊话）',
+  '（停顿两秒）',
+  '（轻笑）',
+  '（压低声音）',
+  '（放慢语速）',
+  '（声音微微发抖）',
+  '（激动地）',
+  '（像在讲秘密一样）',
+  '（清了清嗓子）',
+  '（喘口气）',
+  '（带着笑意）',
+  '（略带哽咽）',
+  '（拖长尾音）',
+  '（节奏突然加快）',
+  '（停顿一秒）',
+  '（停顿三秒）',
+  '（低声叹气）',
+];
+
+export const VOICE_OPTIONS = [
+  {label: 'MiMo-默认 · mimo_default', value: 'mimo_default'},
+  {label: 'MiMo-中文女声 · default_zh', value: 'default_zh'},
+  {label: 'MiMo-英文女声 · default_eh', value: 'default_eh'},
+];
+
+export const AUDIO_FORMAT_OPTIONS = [
+  {label: 'WAV', value: 'wav'},
+  {label: 'MP3', value: 'mp3'},
+  {label: 'PCM', value: 'pcm'},
+];
+
+export const DEFAULT_CONFIG = {
+  endpoint: 'https://api.xiaomimimo.com/v1/chat/completions',
+  model: 'mimo-v2.5-tts',
+  audioFormat: 'wav',
+  voice: 'mimo_default',
+};
