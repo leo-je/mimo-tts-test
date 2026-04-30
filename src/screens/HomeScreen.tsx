@@ -230,11 +230,11 @@ export default function HomeScreen({navigation}: any) {
 
   async function handlePauseAudio() {
     try {
-      const {AudioPlayer} = NativeModules;
-      await AudioPlayer.pause();
       setPlaybackState('paused');
+      const {AudioPlayer} = NativeModules;
+      AudioPlayer.pause(); // fire-and-forget
     } catch (error: any) {
-      Alert.alert('暂停失败', error?.message || '');
+      setPlaybackState('idle');
     }
   }
 
@@ -242,12 +242,9 @@ export default function HomeScreen({navigation}: any) {
     try {
       setPlaybackState('playing');
       const {AudioPlayer} = NativeModules;
-      await AudioPlayer.resume();
-      // resume 返回时播放可能已结束（极短音频），回到 idle
-      setPlaybackState('idle');
+      AudioPlayer.resume(); // fire-and-forget，播放结束由 play() 的 Promise 决定
     } catch (error: any) {
       setPlaybackState('idle');
-      Alert.alert('继续播放失败', error?.message || '');
     }
   }
 
