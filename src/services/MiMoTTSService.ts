@@ -1,5 +1,10 @@
 import {MiMoConfig, TTSRequest, TTSResponse} from '../types';
 
+/**
+ * 构建风格前缀，格式：(风格1 风格2)
+ * v2.5 使用半角括号，如 (开心 变快)正文内容
+ * 唱歌模式：(唱歌)歌词
+ */
 export function buildStylePrefix(styles: string[], customStyles: string = ''): string {
   const selectedStyles = [...styles];
   const custom = customStyles
@@ -12,11 +17,7 @@ export function buildStylePrefix(styles: string[], customStyles: string = ''): s
     return '';
   }
 
-  if (allStyles.includes('唱歌')) {
-    return '<style>唱歌</style>';
-  }
-
-  return `<style>${allStyles.join(' ')}</style>`;
+  return `(${allStyles.join(' ')})`;
 }
 
 export function buildAssistantContent(

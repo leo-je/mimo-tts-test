@@ -10,7 +10,12 @@ import {
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import {Picker} from '@react-native-picker/picker';
-import {VOICE_OPTIONS, AUDIO_FORMAT_OPTIONS, DEFAULT_CONFIG} from '../constants/styles';
+import {
+  MODEL_OPTIONS,
+  VOICE_OPTIONS,
+  AUDIO_FORMAT_OPTIONS,
+  DEFAULT_CONFIG,
+} from '../constants/styles';
 import {MiMoConfig} from '../types';
 
 const STORAGE_KEYS = {
@@ -18,6 +23,7 @@ const STORAGE_KEYS = {
   endpoint: 'mimo-tts-endpoint',
   format: 'mimo-tts-format',
   voice: 'mimo-tts-voice',
+  model: 'mimo-tts-model',
 };
 
 export default function SettingsScreen({navigation}: any) {
@@ -34,11 +40,12 @@ export default function SettingsScreen({navigation}: any) {
   }, []);
 
   async function loadConfig() {
-    const [apiKey, endpoint, format, voice] = await Promise.all([
+    const [apiKey, endpoint, format, voice, model] = await Promise.all([
       AsyncStorage.getItem(STORAGE_KEYS.apiKey),
       AsyncStorage.getItem(STORAGE_KEYS.endpoint),
       AsyncStorage.getItem(STORAGE_KEYS.format),
       AsyncStorage.getItem(STORAGE_KEYS.voice),
+      AsyncStorage.getItem(STORAGE_KEYS.model),
     ]);
     setConfig(prev => ({
       ...prev,
@@ -46,6 +53,7 @@ export default function SettingsScreen({navigation}: any) {
       endpoint: endpoint || DEFAULT_CONFIG.endpoint,
       audioFormat: format || DEFAULT_CONFIG.audioFormat,
       voice: voice || DEFAULT_CONFIG.voice,
+      model: model || DEFAULT_CONFIG.model,
     }));
   }
 
@@ -59,14 +67,49 @@ export default function SettingsScreen({navigation}: any) {
       AsyncStorage.setItem(STORAGE_KEYS.endpoint, config.endpoint.trim()),
       AsyncStorage.setItem(STORAGE_KEYS.format, config.audioFormat),
       AsyncStorage.setItem(STORAGE_KEYS.voice, config.voice),
+      AsyncStorage.setItem(STORAGE_KEYS.model, config.model),
     ]);
     Alert.alert('成功', '配置已保存', [
       {text: '确定', onPress: () => navigation.goBack()},
     ]);
   }
 
+  const isVoiceDesign = config.model === 'mimo-v2.5-tts-voicedesign';
+  const isVoiceClone = config.model === 'mimo-v2.5-tts-voiceclone';
+  const showPresetVoice = config.model === 'mimo-v2.5-tts';
+
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+      <View style={styles.card}>
+        <Text style={styles.cardTitle}>模型选择</Text>
+        <View style={styles.pickerWrapper}>
+          <Picker
+            selectedValue={config.model}
+            onValueChange={value =>
+              setConfig(prev => ({...prev, model: value}))
+            }>
+            {MODEL_OPTIONS.map(opt => (
+              <Picker.Item key={opt.value} label={opt.label} value={opt.value} />
+            ))}
+          </Picker>
+        </View>
+
+        {isVoiceDesign && (
+          <View style={styles.tipBox}>
+            <Text style={styles.tipText}>
+              音色设计模式：通过 user message 中的文本描述定制音色，无需预置音色或音频样本。不支持唱歌模式。
+            </Text>
+          </View>
+        )}
+        {isVoiceClone && (
+          <View style={styles.tipBox}>
+            <Text style={styles.tipText}>
+              音色复刻模式：在 voice 字段传入 Base64 编码的音频样本（data:mime;base64,...）。不支持唱歌模式。
+            </Text>
+          </View>
+        )}
+      </View>
+
       <View style={styles.card}>
         <Text style={styles.cardTitle}>API 配置</Text>
 
@@ -88,30 +131,40 @@ export default function SettingsScreen({navigation}: any) {
           placeholder="API Endpoint"
           autoCapitalize="none"
         />
-
-        <Text style={styles.label}>模型</Text>
-        <TextInput
-          style={[styles.input, styles.inputReadonly]}
-          value={config.model}
-          editable={false}
-        />
       </View>
 
       <View style={styles.card}>
         <Text style={styles.cardTitle}>音频配置</Text>
 
-        <Text style={styles.label}>预置音色</Text>
-        <View style={styles.pickerWrapper}>
-          <Picker
-            selectedValue={config.voice}
-            onValueChange={value =>
-              setConfig(prev => ({...prev, voice: value}))
-            }>
-            {VOICE_OPTIONS.map(opt => (
-              <Picker.Item key={opt.value} label={opt.label} value={opt.value} />
-            ))}
-          </Picker>
-        </View>
+        {showPresetVoice && (
+          <>
+            <Text style={styles.label}>预置音色</Text>
+            <View style={styles.pickerWrapper}>
+              <Picker
+                selectedValue={config.voice}
+                onValueChange={value =>
+                  setConfig(prev => ({...prev, voice: value}))
+                }>
+                {VOICE_OPTIONS.map(opt => (
+                  <Picker.Item key={opt.value} label={opt.label} value={opt.value} />
+                ))}
+              </Picker>
+            </View>
+          </>
+        )}
+
+        {isVoiceClone && (
+          <>
+            <Text style={styles.label}>音色样本 (Base64)</Text>
+            <TextInput
+              style={styles.input}
+              value={config.voice}
+              onChangeText={text => setConfig(prev => ({...prev, voice: text}))}
+              placeholder="data:audio/mpeg;base64,..."
+              autoCapitalize="none"
+            />
+          </>
+        )}
 
         <Text style={styles.label}>音频格式</Text>
         <View style={styles.pickerWrapper}>
@@ -172,16 +225,23 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(255, 252, 248, 0.92)',
     color: '#24170e',
   },
-  inputReadonly: {
-    backgroundColor: 'rgba(230, 220, 210, 0.5)',
-    color: '#6b5646',
-  },
   pickerWrapper: {
     borderWidth: 1,
     borderColor: 'rgba(63, 45, 28, 0.22)',
     borderRadius: 12,
     backgroundColor: 'rgba(255, 252, 248, 0.92)',
     overflow: 'hidden',
+  },
+  tipBox: {
+    marginTop: 12,
+    padding: 12,
+    borderRadius: 10,
+    backgroundColor: 'rgba(199, 93, 44, 0.08)',
+  },
+  tipText: {
+    fontSize: 13,
+    color: '#6b5646',
+    lineHeight: 20,
   },
   saveBtn: {
     backgroundColor: '#c75d2c',

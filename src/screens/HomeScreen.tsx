@@ -35,6 +35,7 @@ const STORAGE_KEYS = {
   endpoint: 'mimo-tts-endpoint',
   format: 'mimo-tts-format',
   voice: 'mimo-tts-voice',
+  model: 'mimo-tts-model',
 };
 
 type StatusType = 'idle' | 'loading' | 'success' | 'error';
@@ -70,11 +71,12 @@ export default function HomeScreen({navigation}: any) {
   }, [navigation]);
 
   async function loadConfig() {
-    const [apiKey, endpoint, format, voice] = await Promise.all([
+    const [apiKey, endpoint, format, voice, model] = await Promise.all([
       AsyncStorage.getItem(STORAGE_KEYS.apiKey),
       AsyncStorage.getItem(STORAGE_KEYS.endpoint),
       AsyncStorage.getItem(STORAGE_KEYS.format),
       AsyncStorage.getItem(STORAGE_KEYS.voice),
+      AsyncStorage.getItem(STORAGE_KEYS.model),
     ]);
     setConfig(prev => ({
       ...prev,
@@ -82,6 +84,7 @@ export default function HomeScreen({navigation}: any) {
       endpoint: endpoint || DEFAULT_CONFIG.endpoint,
       audioFormat: format || DEFAULT_CONFIG.audioFormat,
       voice: voice || DEFAULT_CONFIG.voice,
+      model: model || DEFAULT_CONFIG.model,
     }));
   }
 
@@ -265,7 +268,7 @@ export default function HomeScreen({navigation}: any) {
 
         <View style={styles.quickInfo}>
           <Text style={styles.quickInfoText}>
-            音色: {config.voice} | 格式: {config.audioFormat}
+            模型: {config.model} | 音色: {config.voice} | 格式: {config.audioFormat}
           </Text>
         </View>
       </View>
@@ -305,7 +308,7 @@ export default function HomeScreen({navigation}: any) {
           placeholder="例如：播音腔、温柔、悬疑、青春感"
         />
         <Text style={styles.tip}>
-          已选风格将拼成 {'<style>...</style>'} 放在文本开头。若包含"唱歌"，只保留"唱歌"。
+          已选风格将拼成 (风格1 风格2) 放在 assistant 文本开头。唱歌模式格式为 (唱歌)歌词。
         </Text>
       </View>
 
@@ -338,7 +341,7 @@ export default function HomeScreen({navigation}: any) {
           ))}
         </View>
         <Text style={styles.tip}>
-          这些标签将以中文括号形式插入正文，方便测试停顿、呼吸、情绪切换和节奏变化。
+          这些标签将以 [标签] 格式插入 assistant 正文，方便测试停顿、呼吸、情绪切换和节奏变化。
         </Text>
       </View>
 
@@ -346,12 +349,15 @@ export default function HomeScreen({navigation}: any) {
       <View style={styles.card}>
         <Text style={styles.cardTitle}>文本输入</Text>
 
-        <Text style={styles.label}>User 角色上下文（可选）</Text>
+        <Text style={styles.label}>
+          User 角色上下文{config.model === 'mimo-v2.5-tts-voicedesign' ? '（必填·音色描述）' : '（可选·风格指令）'}
+        </Text>
         <TextInput
           style={[styles.input, styles.textarea]}
           value={userPrompt}
           onChangeText={setUserPrompt}
-          placeholder="可选，用于给模型补充场景信息或语气要求"
+          placeholder={config.model === 'mimo-v2.5-tts-voicedesign' ? '音色描述：如 A warm, mature female voice...' : '自然语言风格指令，如：用轻快上扬的语调...'}
+
           multiline
           numberOfLines={3}
           textAlignVertical="top"
