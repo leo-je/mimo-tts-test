@@ -167,6 +167,10 @@ HomeScreen → NativeModules.AudioPlayer.play(path, promise)
 
 ---
 
+## 待实现功能
+
+- [ ] 音色复刻（VoiceClone）：支持上传/录制音频样本进行音色克隆
+
 ## 致谢
 
 项目部分元素内容参考了 [sonicmingit/xiaomitts](https://github.com/sonicmingit/xiaomitts)。
