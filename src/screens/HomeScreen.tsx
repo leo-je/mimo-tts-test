@@ -1,4 +1,4 @@
-import React, {useState, useEffect, useCallback} from 'react';
+import React, {useState, useEffect, useRef} from 'react';
 import {
   View,
   Text,
@@ -10,6 +10,7 @@ import {
   ActivityIndicator,
   Platform,
   NativeModules,
+  Modal,
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import RNFS from 'react-native-fs';
@@ -18,8 +19,6 @@ import Icon from 'react-native-vector-icons/MaterialIcons';
 import {
   STYLE_OPTIONS,
   AUDIO_TAG_OPTIONS,
-  VOICE_OPTIONS,
-  AUDIO_FORMAT_OPTIONS,
   DEFAULT_CONFIG,
 } from '../constants/styles';
 import {TEMPLATE_LIBRARY} from '../constants/templates';
@@ -51,7 +50,6 @@ export default function HomeScreen({navigation}: any) {
 
   const [selectedStyles, setSelectedStyles] = useState<string[]>([]);
   const [customStyles, setCustomStyles] = useState('');
-  const [selectedTags, setSelectedTags] = useState<string[]>([]);
   const [userPrompt, setUserPrompt] = useState('');
   const [assistantText, setAssistantText] = useState('');
   const [selectedTemplateId, setSelectedTemplateId] = useState(TEMPLATE_LIBRARY[0].id);
@@ -62,6 +60,12 @@ export default function HomeScreen({navigation}: any) {
   const [audioPath, setAudioPath] = useState('');
   const [isPlaying, setIsPlaying] = useState(false);
   const [synthesizing, setSynthesizing] = useState(false);
+
+  // 光标位置 & 标签插入面板
+  const assistantInputRef = useRef<TextInput>(null);
+  const [cursorPos, setCursorPos] = useState(0);
+  const [showTagPanel, setShowTagPanel] = useState(false);
+  const [assistantFocused, setAssistantFocused] = useState(false);
 
   useEffect(() => {
     loadConfig();
@@ -90,7 +94,6 @@ export default function HomeScreen({navigation}: any) {
 
   function applyTemplate(template: TestTemplate) {
     setSelectedStyles([...template.styles]);
-    setSelectedTags([...template.tags]);
     setCustomStyles('');
     setUserPrompt(template.userPrompt);
     setAssistantText(template.assistantText);
@@ -108,31 +111,36 @@ export default function HomeScreen({navigation}: any) {
     );
   }
 
-  function toggleTag(tag: string) {
-    setSelectedTags(prev =>
-      prev.includes(tag) ? prev.filter(t => t !== tag) : [...prev, tag],
-    );
-  }
-
-  function insertTags() {
-    if (!selectedTags.length) return;
-    const prefix = selectedTags.join('');
-    setAssistantText(prev => (prev ? `${prefix}${prev}` : prefix));
-  }
-
   function clearStyles() {
     setSelectedStyles([]);
     setCustomStyles('');
   }
 
-  function buildFinalContent(): string {
-    return buildAssistantContent(assistantText, selectedStyles, customStyles);
+  function insertTagAtCursor(tag: string) {
+    const before = assistantText.slice(0, cursorPos);
+    const after = assistantText.slice(cursorPos);
+    const newText = before + tag + after;
+    setAssistantText(newText);
+    const newPos = cursorPos + tag.length;
+    setCursorPos(newPos);
+    setShowTagPanel(false);
+    // 重新聚焦输入框，设置光标位置
+    setTimeout(() => {
+      assistantInputRef.current?.setNativeProps({
+        selection: {start: newPos, end: newPos},
+      });
+    }, 50);
   }
 
-  function buildPreviewJson(): string {
-    const content = buildFinalContent();
-    const payload = buildRequestPayload(config, userPrompt, content);
-    return JSON.stringify(payload, null, 2);
+  function handleAssistantSelectionChange(event: any) {
+    const {selection} = event.nativeEvent;
+    if (selection) {
+      setCursorPos(selection.start ?? 0);
+    }
+  }
+
+  function buildFinalContent(): string {
+    return buildAssistantContent(assistantText, selectedStyles, customStyles);
   }
 
   async function handleSynthesize() {
@@ -161,10 +169,6 @@ export default function HomeScreen({navigation}: any) {
       const result = await synthesize(config, payload);
 
       const ext = config.audioFormat.toLowerCase();
-      const mimeMap: Record<string, string> = {
-        mp3: 'audio/mpeg',
-        pcm: 'audio/L16',
-      };
       const filePath = `${RNFS.CachesDirectoryPath}/mimo-tts-output.${ext}`;
 
       await RNFS.writeFile(filePath, result.audioBase64, 'base64');
@@ -209,27 +213,19 @@ export default function HomeScreen({navigation}: any) {
 
   function getStatusColor(): string {
     switch (status) {
-      case 'loading':
-        return '#8a4f18';
-      case 'success':
-        return '#1e7f53';
-      case 'error':
-        return '#b33535';
-      default:
-        return '#6b5646';
+      case 'loading': return '#8a4f18';
+      case 'success': return '#1e7f53';
+      case 'error': return '#b33535';
+      default: return '#6b5646';
     }
   }
 
   function getStatusBgColor(): string {
     switch (status) {
-      case 'loading':
-        return 'rgba(244, 179, 112, 0.2)';
-      case 'success':
-        return 'rgba(30, 127, 83, 0.14)';
-      case 'error':
-        return 'rgba(179, 53, 53, 0.12)';
-      default:
-        return 'rgba(94, 70, 47, 0.08)';
+      case 'loading': return 'rgba(244, 179, 112, 0.2)';
+      case 'success': return 'rgba(30, 127, 83, 0.14)';
+      case 'error': return 'rgba(179, 53, 53, 0.12)';
+      default: return 'rgba(94, 70, 47, 0.08)';
     }
   }
 
@@ -252,9 +248,7 @@ export default function HomeScreen({navigation}: any) {
             selectedValue={selectedTemplateId}
             onValueChange={value => {
               const template = TEMPLATE_LIBRARY.find(t => t.id === value);
-              if (template) {
-                applyTemplate(template);
-              }
+              if (template) applyTemplate(template);
             }}>
             {TEMPLATE_LIBRARY.map(t => (
               <Picker.Item
@@ -265,7 +259,6 @@ export default function HomeScreen({navigation}: any) {
             ))}
           </Picker>
         </View>
-
         <View style={styles.quickInfo}>
           <Text style={styles.quickInfoText}>
             模型: {config.model} | 音色: {config.voice} | 格式: {config.audioFormat}
@@ -312,39 +305,6 @@ export default function HomeScreen({navigation}: any) {
         </Text>
       </View>
 
-      {/* Audio Tags */}
-      <View style={styles.card}>
-        <View style={styles.cardHeader}>
-          <Text style={styles.cardTitle}>细粒度音频标签</Text>
-          <TouchableOpacity onPress={insertTags}>
-            <Text style={styles.ghostBtnText}>插入到正文</Text>
-          </TouchableOpacity>
-        </View>
-        <View style={styles.chipGrid}>
-          {AUDIO_TAG_OPTIONS.map(tag => (
-            <TouchableOpacity
-              key={tag}
-              style={[
-                styles.chip,
-                selectedTags.includes(tag) && styles.chipActive,
-              ]}
-              onPress={() => toggleTag(tag)}>
-              <Text
-                style={[
-                  styles.chipText,
-                  selectedTags.includes(tag) && styles.chipTextActive,
-                ]}
-                numberOfLines={1}>
-                {tag}
-              </Text>
-            </TouchableOpacity>
-          ))}
-        </View>
-        <Text style={styles.tip}>
-          这些标签将以 [标签] 格式插入 assistant 正文，方便测试停顿、呼吸、情绪切换和节奏变化。
-        </Text>
-      </View>
-
       {/* Text Input */}
       <View style={styles.card}>
         <Text style={styles.cardTitle}>文本输入</Text>
@@ -357,23 +317,63 @@ export default function HomeScreen({navigation}: any) {
           value={userPrompt}
           onChangeText={setUserPrompt}
           placeholder={config.model === 'mimo-v2.5-tts-voicedesign' ? '音色描述：如 A warm, mature female voice...' : '自然语言风格指令，如：用轻快上扬的语调...'}
-
           multiline
           numberOfLines={3}
           textAlignVertical="top"
         />
 
-        <Text style={styles.label}>Assistant 角色待合成文本</Text>
+        <View style={styles.assistantLabelRow}>
+          <Text style={[styles.label, {marginTop: 0, marginBottom: 0}]}>Assistant 角色待合成文本</Text>
+          <TouchableOpacity
+            style={styles.insertTagBtn}
+            onPress={() => setShowTagPanel(true)}>
+            <Icon name="label" size={16} color="#c75d2c" />
+            <Text style={styles.insertTagBtnText}>插入标签</Text>
+          </TouchableOpacity>
+        </View>
         <TextInput
-          style={[styles.input, styles.textarea]}
+          ref={assistantInputRef}
+          style={[styles.input, styles.textarea, assistantFocused && styles.textareaFocused]}
           value={assistantText}
           onChangeText={setAssistantText}
+          onSelectionChange={handleAssistantSelectionChange}
+          onFocus={() => setAssistantFocused(true)}
+          onBlur={() => setAssistantFocused(false)}
           placeholder="这里填写真正要转语音的文本"
           multiline
           numberOfLines={6}
           textAlignVertical="top"
         />
+
       </View>
+
+      {/* 标签选择弹窗 */}
+      <Modal
+        visible={showTagPanel}
+        animationType="slide"
+        transparent
+        onRequestClose={() => setShowTagPanel(false)}>
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>选择要插入的标签</Text>
+              <TouchableOpacity onPress={() => setShowTagPanel(false)}>
+                <Icon name="close" size={24} color="#6b5646" />
+              </TouchableOpacity>
+            </View>
+            <ScrollView style={styles.modalScroll} contentContainerStyle={styles.modalChipGrid}>
+              {AUDIO_TAG_OPTIONS.map(tag => (
+                <TouchableOpacity
+                  key={tag}
+                  style={styles.modalChip}
+                  onPress={() => insertTagAtCursor(tag)}>
+                  <Text style={styles.modalChipText}>{tag}</Text>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
 
       {/* Preview */}
       <View style={styles.card}>
@@ -511,6 +511,10 @@ const styles = StyleSheet.create({
     minHeight: 80,
     textAlignVertical: 'top',
   },
+  textareaFocused: {
+    borderColor: 'rgba(199, 93, 44, 0.6)',
+    borderWidth: 2,
+  },
   tip: {
     fontSize: 12,
     color: '#6b5646',
@@ -547,6 +551,76 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: '#9f3e17',
     fontWeight: '600',
+  },
+  assistantLabelRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginTop: 12,
+    marginBottom: 6,
+  },
+  insertTagBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 999,
+    alignSelf: 'flex-start',
+    backgroundColor: 'rgba(199, 93, 44, 0.08)',
+    borderWidth: 1,
+    borderColor: 'rgba(199, 93, 44, 0.16)',
+  },
+  insertTagBtnText: {
+    fontSize: 13,
+    color: '#c75d2c',
+    fontWeight: '600',
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(36, 23, 14, 0.5)',
+    justifyContent: 'flex-end',
+  },
+  modalContent: {
+    backgroundColor: '#fff8ef',
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    maxHeight: '70%',
+    paddingBottom: 30,
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: 18,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(63, 45, 28, 0.1)',
+  },
+  modalTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#24170e',
+  },
+  modalScroll: {
+    paddingHorizontal: 18,
+    paddingTop: 14,
+  },
+  modalChipGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 10,
+  },
+  modalChip: {
+    borderWidth: 1,
+    borderColor: 'rgba(173, 102, 54, 0.24)',
+    backgroundColor: 'rgba(255, 245, 235, 0.95)',
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+  },
+  modalChipText: {
+    fontSize: 14,
+    color: '#24170e',
   },
   codeBlock: {
     backgroundColor: '#261a11',
