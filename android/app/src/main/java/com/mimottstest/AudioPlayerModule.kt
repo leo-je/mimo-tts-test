@@ -37,6 +37,34 @@ class AudioPlayerModule(reactContext: ReactApplicationContext) :
     }
 
     @ReactMethod
+    fun pause(promise: Promise) {
+        try {
+            player?.let {
+                if (it.isPlaying) {
+                    it.pause()
+                }
+            }
+            promise.resolve("paused")
+        } catch (e: Exception) {
+            promise.reject("PAUSE_ERROR", e.message, e)
+        }
+    }
+
+    @ReactMethod
+    fun resume(promise: Promise) {
+        try {
+            player?.let {
+                if (!it.isPlaying) {
+                    it.start()
+                }
+            }
+            promise.resolve("resumed")
+        } catch (e: Exception) {
+            promise.reject("RESUME_ERROR", e.message, e)
+        }
+    }
+
+    @ReactMethod
     fun stop(promise: Promise) {
         try {
             releasePlayer()

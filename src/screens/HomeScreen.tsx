@@ -27,7 +27,7 @@ import {
   buildRequestPayload,
   synthesize,
 } from '../services/MiMoTTSService';
-import {MiMoConfig, TestTemplate} from '../types';
+import {MiMoConfig, TestTemplate, TTSRequest} from '../types';
 
 const STORAGE_KEYS = {
   apiKey: 'mimo-tts-api-key',
@@ -58,10 +58,10 @@ export default function HomeScreen({navigation}: any) {
   const [statusText, setStatusText] = useState('待发起');
   const [responseMeta, setResponseMeta] = useState('');
   const [audioPath, setAudioPath] = useState('');
-  const [isPlaying, setIsPlaying] = useState(false);
+  const [playbackState, setPlaybackState] = useState<'idle' | 'playing' | 'paused'>('idle');
   const [synthesizing, setSynthesizing] = useState(false);
+  const [lastRequestJson, setLastRequestJson] = useState('');
 
-  // 光标位置 & 标签插入面板
   const assistantInputRef = useRef<TextInput>(null);
   const [cursorPos, setCursorPos] = useState(0);
   const [showTagPanel, setShowTagPanel] = useState(false);
@@ -100,6 +100,7 @@ export default function HomeScreen({navigation}: any) {
     setSelectedTemplateId(template.id);
     setConfig(prev => ({
       ...prev,
+      ...(template.model ? {model: template.model} : {}),
       voice: template.voice,
       audioFormat: template.format,
     }));
@@ -124,7 +125,6 @@ export default function HomeScreen({navigation}: any) {
     const newPos = cursorPos + tag.length;
     setCursorPos(newPos);
     setShowTagPanel(false);
-    // 重新聚焦输入框，设置光标位置
     setTimeout(() => {
       assistantInputRef.current?.setNativeProps({
         selection: {start: newPos, end: newPos},
@@ -152,11 +152,19 @@ export default function HomeScreen({navigation}: any) {
       return;
     }
 
+    if (config.model === 'mimo-v2.5-tts-voicedesign' && !userPrompt.trim()) {
+      Alert.alert('提示', '音色设计模式下，User 角色上下文（音色描述）为必填项');
+      return;
+    }
+
     const content = buildFinalContent();
     if (!content) {
       Alert.alert('提示', '请先输入待合成文本');
       return;
     }
+
+    const payload = buildRequestPayload(config, userPrompt, content);
+    setLastRequestJson(JSON.stringify(payload, null, 2));
 
     setSynthesizing(true);
     setStatus('loading');
@@ -165,7 +173,6 @@ export default function HomeScreen({navigation}: any) {
     setAudioPath('');
 
     try {
-      const payload = buildRequestPayload(config, userPrompt, content);
       const result = await synthesize(config, payload);
 
       const ext = config.audioFormat.toLowerCase();
@@ -201,13 +208,46 @@ export default function HomeScreen({navigation}: any) {
   async function handlePlayAudio() {
     if (!audioPath) return;
     try {
-      setIsPlaying(true);
+      setPlaybackState('playing');
       const {AudioPlayer} = NativeModules;
       await AudioPlayer.play(audioPath);
-      setIsPlaying(false);
+      setPlaybackState('idle');
     } catch (error: any) {
-      setIsPlaying(false);
+      setPlaybackState('idle');
       Alert.alert('播放失败', error?.message || '音频播放出错');
+    }
+  }
+
+  async function handleStopAudio() {
+    try {
+      const {AudioPlayer} = NativeModules;
+      await AudioPlayer.stop();
+      setPlaybackState('idle');
+    } catch (error: any) {
+      setPlaybackState('idle');
+    }
+  }
+
+  async function handlePauseAudio() {
+    try {
+      const {AudioPlayer} = NativeModules;
+      await AudioPlayer.pause();
+      setPlaybackState('paused');
+    } catch (error: any) {
+      Alert.alert('暂停失败', error?.message || '');
+    }
+  }
+
+  async function handleResumeAudio() {
+    try {
+      setPlaybackState('playing');
+      const {AudioPlayer} = NativeModules;
+      await AudioPlayer.resume();
+      // resume 返回时播放可能已结束（极短音频），回到 idle
+      setPlaybackState('idle');
+    } catch (error: any) {
+      setPlaybackState('idle');
+      Alert.alert('继续播放失败', error?.message || '');
     }
   }
 
@@ -230,224 +270,259 @@ export default function HomeScreen({navigation}: any) {
   }
 
   const finalContent = buildFinalContent();
+  const canPlay = status === 'success' && !!audioPath;
+  const isAudioActive = playbackState !== 'idle';
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
-      {/* Template Selector */}
-      <View style={styles.card}>
-        <View style={styles.cardHeader}>
-          <Text style={styles.cardTitle}>测试模板</Text>
-          <TouchableOpacity
-            style={styles.settingsBtn}
-            onPress={() => navigation.navigate('Settings')}>
-            <Icon name="settings" size={22} color="#c75d2c" />
-          </TouchableOpacity>
-        </View>
-        <View style={styles.pickerWrapper}>
-          <Picker
-            selectedValue={selectedTemplateId}
-            onValueChange={value => {
-              const template = TEMPLATE_LIBRARY.find(t => t.id === value);
-              if (template) applyTemplate(template);
-            }}>
-            {TEMPLATE_LIBRARY.map(t => (
-              <Picker.Item
-                key={t.id}
-                label={`${t.name} · ${t.summary}`}
-                value={t.id}
-              />
-            ))}
-          </Picker>
-        </View>
-        <View style={styles.quickInfo}>
-          <Text style={styles.quickInfoText}>
-            模型: {config.model} | 音色: {config.voice} | 格式: {config.audioFormat}
-          </Text>
-        </View>
-      </View>
-
-      {/* Style Builder */}
-      <View style={styles.card}>
-        <View style={styles.cardHeader}>
-          <Text style={styles.cardTitle}>整体风格控制</Text>
-          <TouchableOpacity onPress={clearStyles}>
-            <Text style={styles.ghostBtnText}>清空风格</Text>
-          </TouchableOpacity>
-        </View>
-        <View style={styles.chipGrid}>
-          {STYLE_OPTIONS.map(style => (
+    <View style={styles.root}>
+      <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+        {/* Template Selector */}
+        <View style={styles.card}>
+          <View style={styles.cardHeader}>
+            <Text style={styles.cardTitle}>测试模板</Text>
             <TouchableOpacity
-              key={style}
-              style={[
-                styles.chip,
-                selectedStyles.includes(style) && styles.chipActive,
-              ]}
-              onPress={() => toggleStyle(style)}>
-              <Text
-                style={[
-                  styles.chipText,
-                  selectedStyles.includes(style) && styles.chipTextActive,
-                ]}>
-                {style}
-              </Text>
+              style={styles.settingsBtn}
+              onPress={() => navigation.navigate('Settings')}>
+              <Icon name="settings" size={22} color="#c75d2c" />
             </TouchableOpacity>
-          ))}
-        </View>
-        <Text style={styles.label}>自定义风格</Text>
-        <TextInput
-          style={styles.input}
-          value={customStyles}
-          onChangeText={setCustomStyles}
-          placeholder="例如：播音腔、温柔、悬疑、青春感"
-        />
-        <Text style={styles.tip}>
-          已选风格将拼成 (风格1 风格2) 放在 assistant 文本开头。唱歌模式格式为 (唱歌)歌词。
-        </Text>
-      </View>
-
-      {/* Text Input */}
-      <View style={styles.card}>
-        <Text style={styles.cardTitle}>文本输入</Text>
-
-        <Text style={styles.label}>
-          User 角色上下文{config.model === 'mimo-v2.5-tts-voicedesign' ? '（必填·音色描述）' : '（可选·风格指令）'}
-        </Text>
-        <TextInput
-          style={[styles.input, styles.textarea]}
-          value={userPrompt}
-          onChangeText={setUserPrompt}
-          placeholder={config.model === 'mimo-v2.5-tts-voicedesign' ? '音色描述：如 A warm, mature female voice...' : '自然语言风格指令，如：用轻快上扬的语调...'}
-          multiline
-          numberOfLines={3}
-          textAlignVertical="top"
-        />
-
-        <View style={styles.assistantLabelRow}>
-          <Text style={[styles.label, {marginTop: 0, marginBottom: 0}]}>Assistant 角色待合成文本</Text>
-          <TouchableOpacity
-            style={styles.insertTagBtn}
-            onPress={() => setShowTagPanel(true)}>
-            <Icon name="label" size={16} color="#c75d2c" />
-            <Text style={styles.insertTagBtnText}>插入标签</Text>
-          </TouchableOpacity>
-        </View>
-        <TextInput
-          ref={assistantInputRef}
-          style={[styles.input, styles.textarea, assistantFocused && styles.textareaFocused]}
-          value={assistantText}
-          onChangeText={setAssistantText}
-          onSelectionChange={handleAssistantSelectionChange}
-          onFocus={() => setAssistantFocused(true)}
-          onBlur={() => setAssistantFocused(false)}
-          placeholder="这里填写真正要转语音的文本"
-          multiline
-          numberOfLines={6}
-          textAlignVertical="top"
-        />
-
-      </View>
-
-      {/* 标签选择弹窗 */}
-      <Modal
-        visible={showTagPanel}
-        animationType="slide"
-        transparent
-        onRequestClose={() => setShowTagPanel(false)}>
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>选择要插入的标签</Text>
-              <TouchableOpacity onPress={() => setShowTagPanel(false)}>
-                <Icon name="close" size={24} color="#6b5646" />
-              </TouchableOpacity>
-            </View>
-            <ScrollView style={styles.modalScroll} contentContainerStyle={styles.modalChipGrid}>
-              {AUDIO_TAG_OPTIONS.map(tag => (
-                <TouchableOpacity
-                  key={tag}
-                  style={styles.modalChip}
-                  onPress={() => insertTagAtCursor(tag)}>
-                  <Text style={styles.modalChipText}>{tag}</Text>
-                </TouchableOpacity>
+          </View>
+          <View style={styles.pickerWrapper}>
+            <Picker
+              selectedValue={selectedTemplateId}
+              onValueChange={value => {
+                const template = TEMPLATE_LIBRARY.find(t => t.id === value);
+                if (template) applyTemplate(template);
+              }}>
+              {TEMPLATE_LIBRARY.map(t => (
+                <Picker.Item
+                  key={t.id}
+                  label={`${t.name} · ${t.summary}`}
+                  value={t.id}
+                />
               ))}
-            </ScrollView>
+            </Picker>
+          </View>
+          <View style={styles.quickInfo}>
+            <Text style={styles.quickInfoText}>
+              模型: {config.model} | 音色: {config.voice} | 格式: {config.audioFormat}
+            </Text>
           </View>
         </View>
-      </Modal>
 
-      {/* Preview */}
-      <View style={styles.card}>
-        <Text style={styles.cardTitle}>最终待合成文本预览</Text>
-        <View style={styles.codeBlock}>
-          <Text style={styles.codeText}>
-            {finalContent || '等待输入待合成文本...'}
+        {/* Style Builder */}
+        <View style={styles.card}>
+          <View style={styles.cardHeader}>
+            <Text style={styles.cardTitle}>整体风格控制</Text>
+            <TouchableOpacity onPress={clearStyles}>
+              <Text style={styles.ghostBtnText}>清空风格</Text>
+            </TouchableOpacity>
+          </View>
+          <View style={styles.chipGrid}>
+            {STYLE_OPTIONS.map(style => (
+              <TouchableOpacity
+                key={style}
+                style={[
+                  styles.chip,
+                  selectedStyles.includes(style) && styles.chipActive,
+                ]}
+                onPress={() => toggleStyle(style)}>
+                <Text
+                  style={[
+                    styles.chipText,
+                    selectedStyles.includes(style) && styles.chipTextActive,
+                  ]}>
+                  {style}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+          <Text style={styles.label}>自定义风格</Text>
+          <TextInput
+            style={styles.input}
+            value={customStyles}
+            onChangeText={setCustomStyles}
+            placeholder="例如：播音腔、温柔、悬疑、青春感"
+          />
+          <Text style={styles.tip}>
+            已选风格将拼成 (风格1 风格2) 放在 assistant 文本开头。唱歌模式格式为 (唱歌)歌词。
           </Text>
         </View>
-      </View>
 
-      {/* Actions */}
-      <View style={styles.actionsRow}>
+        {/* Text Input */}
+        <View style={styles.card}>
+          <Text style={styles.cardTitle}>文本输入</Text>
+
+          <Text style={styles.label}>
+            User 角色上下文{config.model === 'mimo-v2.5-tts-voicedesign' ? '（必填·音色描述）' : '（可选·风格指令）'}
+          </Text>
+          <TextInput
+            style={[styles.input, styles.textarea]}
+            value={userPrompt}
+            onChangeText={setUserPrompt}
+            placeholder={config.model === 'mimo-v2.5-tts-voicedesign' ? '音色描述：如 A warm, mature female voice...' : '自然语言风格指令，如：用轻快上扬的语调...'}
+            multiline
+            numberOfLines={3}
+            textAlignVertical="top"
+          />
+
+          <View style={styles.assistantLabelRow}>
+            <Text style={[styles.label, {marginTop: 0, marginBottom: 0}]}>Assistant 角色待合成文本</Text>
+            <TouchableOpacity
+              style={styles.insertTagBtn}
+              onPress={() => setShowTagPanel(true)}>
+              <Icon name="label" size={16} color="#c75d2c" />
+              <Text style={styles.insertTagBtnText}>插入标签</Text>
+            </TouchableOpacity>
+          </View>
+          <TextInput
+            ref={assistantInputRef}
+            style={[styles.input, styles.textarea, assistantFocused && styles.textareaFocused]}
+            value={assistantText}
+            onChangeText={setAssistantText}
+            onSelectionChange={handleAssistantSelectionChange}
+            onFocus={() => setAssistantFocused(true)}
+            onBlur={() => setAssistantFocused(false)}
+            placeholder="这里填写真正要转语音的文本"
+            multiline
+            numberOfLines={6}
+            textAlignVertical="top"
+          />
+        </View>
+
+        {/* 标签选择弹窗 */}
+        <Modal
+          visible={showTagPanel}
+          animationType="slide"
+          transparent
+          onRequestClose={() => setShowTagPanel(false)}>
+          <View style={styles.modalOverlay}>
+            <View style={styles.modalContent}>
+              <View style={styles.modalHeader}>
+                <Text style={styles.modalTitle}>选择要插入的标签</Text>
+                <TouchableOpacity onPress={() => setShowTagPanel(false)}>
+                  <Icon name="close" size={24} color="#6b5646" />
+                </TouchableOpacity>
+              </View>
+              <ScrollView style={styles.modalScroll} contentContainerStyle={styles.modalChipGrid}>
+                {AUDIO_TAG_OPTIONS.map(tag => (
+                  <TouchableOpacity
+                    key={tag}
+                    style={styles.modalChip}
+                    onPress={() => insertTagAtCursor(tag)}>
+                    <Text style={styles.modalChipText}>{tag}</Text>
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+            </View>
+          </View>
+        </Modal>
+
+        {/* Preview */}
+        <View style={styles.card}>
+          <Text style={styles.cardTitle}>最终待合成文本预览</Text>
+          <View style={styles.codeBlock}>
+            <Text style={styles.codeText}>
+              {finalContent || '等待输入待合成文本...'}
+            </Text>
+          </View>
+        </View>
+
+        {/* Request Info */}
+        {lastRequestJson ? (
+          <View style={styles.card}>
+            <Text style={styles.cardTitle}>请求信息</Text>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+              <View style={styles.codeBlock}>
+                <Text style={styles.codeText}>{lastRequestJson}</Text>
+              </View>
+            </ScrollView>
+          </View>
+        ) : null}
+
+        {/* Response */}
+        <View style={styles.card}>
+          <View style={styles.cardHeader}>
+            <Text style={styles.cardTitle}>返回音频</Text>
+            <View style={[styles.statusBadge, {backgroundColor: getStatusBgColor()}]}>
+              <Text style={[styles.statusText, {color: getStatusColor()}]}>
+                {statusText}
+              </Text>
+            </View>
+          </View>
+
+          {responseMeta ? (
+            <View style={[styles.codeBlock, styles.codeBlockSmall]}>
+              <Text style={styles.codeText}>{responseMeta}</Text>
+            </View>
+          ) : null}
+
+          {/* 底部留白，避免被 FAB 遮挡 */}
+          <View style={{height: 140}} />
+        </View>
+      </ScrollView>
+
+      {/* 固定右下角 FAB 按钮 */}
+      <View style={styles.fabContainer}>
         <TouchableOpacity
-          style={[styles.primaryBtn, synthesizing && styles.btnDisabled]}
+          style={[styles.fab, styles.fabSynthesize, synthesizing && styles.fabDisabled]}
           onPress={handleSynthesize}
           disabled={synthesizing}>
           {synthesizing ? (
             <ActivityIndicator color="#fff8ef" size="small" />
           ) : (
-            <Icon name="volume-up" size={20} color="#fff8ef" />
+            <Icon name="send" size={24} color="#fff8ef" />
           )}
-          <Text style={styles.primaryBtnText}>
-            {synthesizing ? '合成中...' : '开始合成'}
-          </Text>
         </TouchableOpacity>
-      </View>
 
-      {/* Status */}
-      <View style={styles.card}>
-        <View style={styles.cardHeader}>
-          <Text style={styles.cardTitle}>返回音频</Text>
-          <View style={[styles.statusBadge, {backgroundColor: getStatusBgColor()}]}>
-            <Text style={[styles.statusText, {color: getStatusColor()}]}>
-              {statusText}
-            </Text>
-          </View>
-        </View>
-
-        {audioPath ? (
-          <View style={styles.audioActions}>
+        {/* 播放中：停止 + 暂停；暂停中：停止 + 继续；空闲：播放 */}
+        {isAudioActive ? (
+          <View style={styles.fabRow}>
             <TouchableOpacity
-              style={styles.secondaryBtn}
-              onPress={handlePlayAudio}>
+              style={[styles.fab, styles.fabStop]}
+              onPress={handleStopAudio}>
+              <Icon name="stop" size={24} color="#fff8ef" />
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.fab, styles.fabPause]}
+              onPress={playbackState === 'paused' ? handleResumeAudio : handlePauseAudio}>
               <Icon
-                name={isPlaying ? 'pause' : 'play-arrow'}
-                size={20}
-                color="#c75d2c"
+                name={playbackState === 'paused' ? 'play-arrow' : 'pause'}
+                size={24}
+                color="#fff8ef"
               />
-              <Text style={styles.secondaryBtnText}>
-                {isPlaying ? '播放中...' : '播放音频'}
-              </Text>
             </TouchableOpacity>
           </View>
-        ) : null}
-
-        {responseMeta ? (
-          <View style={[styles.codeBlock, styles.codeBlockSmall]}>
-            <Text style={styles.codeText}>{responseMeta}</Text>
-          </View>
-        ) : null}
+        ) : (
+          <TouchableOpacity
+            style={[styles.fab, styles.fabPlay, !canPlay && styles.fabDisabled]}
+            onPress={handlePlayAudio}
+            disabled={!canPlay}>
+            <Icon
+              name="play-arrow"
+              size={28}
+              color={canPlay ? '#fff8ef' : 'rgba(255,248,239,0.4)'}
+            />
+          </TouchableOpacity>
+        )}
       </View>
-    </ScrollView>
+    </View>
   );
 }
 
+const FAB_SIZE_SYNTH = 52;
+const FAB_SIZE_PLAY = 60;
+
 const styles = StyleSheet.create({
-  container: {
+  root: {
     flex: 1,
     backgroundColor: '#f7f0e6',
   },
+  container: {
+    flex: 1,
+  },
   content: {
     padding: 16,
-    paddingBottom: 40,
+    paddingBottom: 20,
   },
   card: {
     backgroundColor: 'rgba(255, 250, 244, 0.92)',
@@ -627,52 +702,16 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     padding: 14,
     minHeight: 80,
+    minWidth: 300,
   },
   codeBlockSmall: {
     minHeight: 60,
-    marginTop: 12,
   },
   codeText: {
     fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
     fontSize: 12,
     color: '#f9e9d5',
     lineHeight: 18,
-  },
-  actionsRow: {
-    marginBottom: 14,
-  },
-  primaryBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-    backgroundColor: '#c75d2c',
-    borderRadius: 999,
-    padding: 16,
-  },
-  btnDisabled: {
-    opacity: 0.6,
-  },
-  primaryBtnText: {
-    color: '#fff8ef',
-    fontSize: 16,
-    fontWeight: '700',
-  },
-  secondaryBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 6,
-    backgroundColor: '#fff8ef',
-    borderRadius: 999,
-    padding: 12,
-    borderWidth: 1,
-    borderColor: 'rgba(169, 96, 49, 0.18)',
-  },
-  secondaryBtnText: {
-    color: '#24170e',
-    fontSize: 14,
-    fontWeight: '600',
   },
   statusBadge: {
     paddingHorizontal: 12,
@@ -683,8 +722,49 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '700',
   },
-  audioActions: {
+  // ── 固定右下角 FAB ──────────────────────────────────────────────
+  fabContainer: {
+    position: 'absolute',
+    right: 20,
+    bottom: 28,
+    alignItems: 'center',
+    gap: 12,
+  },
+  fab: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 999,
+    elevation: 6,
+    shadowColor: '#000',
+    shadowOffset: {width: 0, height: 3},
+    shadowOpacity: 0.25,
+    shadowRadius: 6,
+  },
+  fabSynthesize: {
+    width: FAB_SIZE_SYNTH,
+    height: FAB_SIZE_SYNTH,
+    backgroundColor: '#9f3e17',
+  },
+  fabPlay: {
+    width: FAB_SIZE_PLAY,
+    height: FAB_SIZE_PLAY,
+    backgroundColor: '#c75d2c',
+  },
+  fabDisabled: {
+    backgroundColor: 'rgba(159, 62, 23, 0.35)',
+  },
+  fabRow: {
     flexDirection: 'row',
     gap: 10,
+  },
+  fabStop: {
+    width: 46,
+    height: 46,
+    backgroundColor: '#b33535',
+  },
+  fabPause: {
+    width: 46,
+    height: 46,
+    backgroundColor: '#8a4f18',
   },
 });

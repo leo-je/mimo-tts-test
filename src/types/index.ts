@@ -11,7 +11,7 @@ export interface TTSRequest {
   messages: Array<{role: string; content: string}>;
   audio: {
     format: string;
-    voice: string;
+    voice?: string;
   };
 }
 
@@ -34,6 +34,7 @@ export interface TestTemplate {
   id: string;
   name: string;
   summary: string;
+  model?: string;
   voice: string;
   format: string;
   styles: string[];

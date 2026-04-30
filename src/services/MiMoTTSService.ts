@@ -34,15 +34,26 @@ export function buildRequestPayload(
   userPrompt: string,
   assistantContent: string,
 ): TTSRequest {
+  const isVoiceDesign = config.model === 'mimo-v2.5-tts-voicedesign';
+
+  // voicedesign: audio 不含 voice（音色由 user 描述决定）
+  // voicedesign 以外：userPrompt 非空时 voice 不发送（否则 user 风格指令失效）
+  let audio: TTSRequest['audio'];
+  if (isVoiceDesign) {
+    audio = {format: config.audioFormat};
+  } else if (userPrompt.trim()) {
+    audio = {format: config.audioFormat};
+  } else {
+    audio = {format: config.audioFormat, voice: config.voice};
+  }
+
   const payload: TTSRequest = {
     model: config.model,
     messages: [],
-    audio: {
-      format: config.audioFormat,
-      voice: config.voice,
-    },
+    audio,
   };
 
+  // voicedesign: user 消息必填（音色描述）；其他模型：可选
   if (userPrompt.trim()) {
     payload.messages.push({
       role: 'user',

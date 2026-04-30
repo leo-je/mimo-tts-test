@@ -137,6 +137,7 @@ export const TEMPLATE_LIBRARY: TestTemplate[] = [
     id: 'voicedesign-demo',
     name: '11 音色设计 · 深夜电台DJ',
     summary: '覆盖 mimo-v2.5-tts-voicedesign 模型',
+    model: 'mimo-v2.5-tts-voicedesign',
     voice: '',
     format: 'wav',
     styles: [],
