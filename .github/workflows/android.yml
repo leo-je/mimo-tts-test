@@ -47,24 +47,24 @@ jobs:
           }
           INIT
 
-      - name: Build Debug APK
+      - name: Build Release APK
         working-directory: android
-        run: ./gradlew assembleDebug --no-daemon
+        run: ./gradlew assembleRelease --no-daemon
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: mimo-tts-test-debug
-          path: android/app/build/outputs/apk/debug/app-debug.apk
-
+          name: mimo-tts-test-release
+          path: android/app/build/outputs/apk/release/app-release.apk
+          
       - name: Upload renamed artifacts to release
         shell: bash
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           TAG=$(date "+%Y-%m-%d-%H-%M-%S")
-          appfile="android/app/build/outputs/apk/debug/app-debug.apk"
+          appfile="android/app/build/outputs/apk/release/app-release.apk"
           # Upload all renamed bundle files
           echo "Uploading: $(basename "$appfile")"
-          gh release upload "$TAG" "$file" --clobber
+          gh release upload "$TAG" "$appfile" --clobber
       
