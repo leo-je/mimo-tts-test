@@ -64,7 +64,6 @@ jobs:
         run: |
           TAG=$(date "+%Y-%m-%d-%H-%M-%S")
           appfile="android/app/build/outputs/apk/release/app-release.apk"
-          # Upload all renamed bundle files
-          echo "Uploading: $(basename "$appfile")"
-          gh release upload "$TAG" "$appfile" --clobber
+          echo "Creating release: $TAG"
+          gh release create "$TAG" "$appfile" --title "$TAG" --notes "Auto generated release APK" --prerelease
       
