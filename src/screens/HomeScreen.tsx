@@ -35,6 +35,11 @@ const STORAGE_KEYS = {
   format: 'mimo-tts-format',
   voice: 'mimo-tts-voice',
   model: 'mimo-tts-model',
+  assistantText: 'mimo-tts-assistant-text',
+  userPrompt: 'mimo-tts-user-prompt',
+  customStyles: 'mimo-tts-custom-styles',
+  selectedStyles: 'mimo-tts-selected-styles',
+  selectedTemplateId: 'mimo-tts-template-id',
 };
 
 type StatusType = 'idle' | 'loading' | 'success' | 'error';
@@ -69,10 +74,14 @@ export default function HomeScreen({navigation}: any) {
 
   useEffect(() => {
     loadConfig();
-    applyTemplate(TEMPLATE_LIBRARY[0]);
+    loadLastInput();
     const unsubscribe = navigation.addListener('focus', loadConfig);
     return unsubscribe;
   }, [navigation]);
+
+  useEffect(() => {
+    saveLastInput();
+  }, [assistantText, userPrompt, customStyles, selectedStyles, selectedTemplateId]);
 
   async function loadConfig() {
     const [apiKey, endpoint, format, voice, model] = await Promise.all([
@@ -90,6 +99,37 @@ export default function HomeScreen({navigation}: any) {
       voice: voice || DEFAULT_CONFIG.voice,
       model: model || DEFAULT_CONFIG.model,
     }));
+  }
+
+  async function loadLastInput() {
+    const [savedText, savedPrompt, savedCustom, savedStyles, savedTemplateId] =
+      await Promise.all([
+        AsyncStorage.getItem(STORAGE_KEYS.assistantText),
+        AsyncStorage.getItem(STORAGE_KEYS.userPrompt),
+        AsyncStorage.getItem(STORAGE_KEYS.customStyles),
+        AsyncStorage.getItem(STORAGE_KEYS.selectedStyles),
+        AsyncStorage.getItem(STORAGE_KEYS.selectedTemplateId),
+      ]);
+
+    if (savedText !== null || savedPrompt !== null) {
+      setAssistantText(savedText || '');
+      setUserPrompt(savedPrompt || '');
+      setCustomStyles(savedCustom || '');
+      setSelectedStyles(savedStyles ? JSON.parse(savedStyles) : []);
+      setSelectedTemplateId(savedTemplateId || TEMPLATE_LIBRARY[0].id);
+    } else {
+      applyTemplate(TEMPLATE_LIBRARY[0]);
+    }
+  }
+
+  function saveLastInput() {
+    AsyncStorage.multiSet([
+      [STORAGE_KEYS.assistantText, assistantText],
+      [STORAGE_KEYS.userPrompt, userPrompt],
+      [STORAGE_KEYS.customStyles, customStyles],
+      [STORAGE_KEYS.selectedStyles, JSON.stringify(selectedStyles)],
+      [STORAGE_KEYS.selectedTemplateId, selectedTemplateId],
+    ]);
   }
 
   function applyTemplate(template: TestTemplate) {
