@@ -11,9 +11,11 @@
 - **28 种整体风格**：基础情绪、复合情绪、语调、音色定位、人设腔调、方言、角色扮演、唱歌
 - **32 种细粒度音频标签**：语速节奏、情绪状态、语音特征、哭笑表达，支持光标位置精确插入
 - **12 个测试模板**：覆盖发布会主持、角色扮演、方言播报、唱歌、导演模式、音色设计等场景
-- **播放控制**：合成完成后支持播放 / 暂停 / 继续 / 停止，状态实时反馈
+- **播放控制**：进度条拖动定位、倍速播放（0.5x / 1x / 1.5x / 2x）、播放 / 暂停 / 停止
+- **合成记录**：每次合成结果自动保存，支持历史列表查看、回放、删除；App 重启自动载入最近记录
+- **5 种配色主题**：暖棕、深邃蓝、森林绿、樱花粉、暗夜模式，切换即时生效
 - **请求日志**：提交的完整 JSON 请求体可直接查看，方便调试
-- **配置持久化**：API Key、模型、音色等设置通过 AsyncStorage 本地保存
+- **配置持久化**：API Key、模型、音色、输入内容、主题等全部本地保存
 
 ---
 
@@ -21,20 +23,23 @@
 
 ```
 mimo-tts-test/
-├── App.tsx                        # 入口，导航配置
+├── App.tsx                        # 入口，导航配置，ThemeProvider
 ├── src/
 │   ├── types/index.ts             # TypeScript 类型定义
+│   ├── theme/
+│   │   ├── themes.ts              # 5 个预设配色主题定义
+│   │   └── ThemeContext.tsx        # 主题 Context Provider 与 hooks
 │   ├── constants/
 │   │   ├── styles.ts              # 模型、音色、风格、标签选项
 │   │   └── templates.ts           # 12 个测试模板
 │   ├── services/
 │   │   └── MiMoTTSService.ts      # API 请求构建与调用
 │   └── screens/
-│       ├── HomeScreen.tsx          # 主界面：输入、合成、播放
-│       └── SettingsScreen.tsx      # 设置界面：API Key、模型、音色配置
+│       ├── HomeScreen.tsx          # 主界面：输入、合成、播放、历史记录
+│       └── SettingsScreen.tsx      # 设置界面：API Key、模型、配色选择
 ├── android/
 │   └── app/src/main/java/com/mimottstest/
-│       ├── AudioPlayerModule.kt    # 原生音频播放模块（Android MediaPlayer）
+│       ├── AudioPlayerModule.kt    # 原生音频播放模块（播放/暂停/进度/倍速）
 │       └── AudioPlayerPackage.kt   # React Native 原生模块注册
 └── package.json
 ```
@@ -81,7 +86,24 @@ npx react-native run-android
 2. 在主页选择测试模板，或手动输入文本
 3. 可选：点击风格标签或插入音频标签
 4. 点击「合成」按钮发起请求
-5. 合成成功后使用底部播放按钮控制播放
+5. 合成成功后使用底部播放栏控制播放
+
+### 播放控制
+
+合成完成后底部出现播放控制栏：
+
+- **进度条**：拖动可跳转到任意播放位置
+- **倍速**：点击 `0.5x` `1x` `1.5x` `2x` 切换播放速度
+- **播放/暂停/停止**：右侧控制按钮
+
+### 合成记录
+
+每次合成结果自动保存（音频文件持久化至文档目录，最多保留 20 条）：
+
+- 点击倍速按钮左侧的时钟图标打开记录列表
+- 点击播放按钮可载入任意历史记录
+- 点击删除按钮可删除记录及对应音频文件
+- App 重启时自动载入最近一次记录的内容和音频
 
 ### 风格标签
 
@@ -105,6 +127,20 @@ npx react-native run-android
 
 当填写了「User 指令」（风格描述）时，系统会自动忽略预置音色字段，避免 API 冲突。`voicedesign` 模型同理。
 
+### 外观设置
+
+在设置页「外观设置」中可切换 5 种配色方案：
+
+| 主题 | 风格 |
+|------|------|
+| 暖棕 | 默认暖色调纸张风格 |
+| 深邃蓝 | 专业冷静蓝色调 |
+| 森林绿 | 自然清新绿色调 |
+| 樱花粉 | 柔和甜美粉色调 |
+| 暗夜模式 | 深色背景护眼 |
+
+切换后即时生效，App 重启后自动恢复。
+
 ---
 
 ## 音频播放实现
@@ -116,9 +152,16 @@ HomeScreen → NativeModules.AudioPlayer.play(path, promise)
                                       .pause(promise)
                                       .resume(promise)
                                       .stop(promise)
+                                      .seekTo(positionMs, promise)
+                                      .setSpeed(speed, promise)
+                                      .getDuration(promise)
+                                      .getCurrentPosition(promise)
 ```
 
-合成完成后 Base64 音频写入本地缓存文件，原生模块读取文件路径进行播放。
+- 合成完成后 Base64 音频写入本地缓存，再复制到文档目录持久保存
+- PCM16 格式自动添加 WAV 头，确保 MediaPlayer 可播放
+- 播放进度通过定时轮询 `getCurrentPosition` 实现，间隔 250ms
+- 倍速通过 `PlaybackParams.setSpeed` 实现（Android API 23+）
 
 ---
 

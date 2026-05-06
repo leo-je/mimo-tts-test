@@ -506,11 +506,6 @@ export default function HomeScreen({navigation}: any) {
         <View style={styles.card}>
           <View style={styles.cardHeader}>
             <Text style={styles.cardTitle}>测试模板</Text>
-            <TouchableOpacity
-              style={styles.settingsBtn}
-              onPress={() => navigation.navigate('Settings')}>
-              <Icon name="settings" size={22} color={theme.accent} />
-            </TouchableOpacity>
           </View>
           <View style={styles.pickerWrapper}>
             <Picker
