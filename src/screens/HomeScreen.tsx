@@ -71,6 +71,7 @@ export default function HomeScreen({navigation}: any) {
   const [cursorPos, setCursorPos] = useState(0);
   const [showTagPanel, setShowTagPanel] = useState(false);
   const [assistantFocused, setAssistantFocused] = useState(false);
+  const initialLoadDone = useRef(false);
 
   useEffect(() => {
     loadConfig();
@@ -80,7 +81,9 @@ export default function HomeScreen({navigation}: any) {
   }, [navigation]);
 
   useEffect(() => {
-    saveLastInput();
+    if (initialLoadDone.current) {
+      saveLastInput();
+    }
   }, [assistantText, userPrompt, customStyles, selectedStyles, selectedTemplateId]);
 
   async function loadConfig() {
@@ -120,6 +123,7 @@ export default function HomeScreen({navigation}: any) {
     } else {
       applyTemplate(TEMPLATE_LIBRARY[0]);
     }
+    initialLoadDone.current = true;
   }
 
   function saveLastInput() {
