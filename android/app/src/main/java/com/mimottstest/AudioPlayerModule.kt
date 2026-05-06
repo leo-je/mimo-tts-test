@@ -1,6 +1,8 @@
 package com.mimottstest
 
 import android.media.MediaPlayer
+import android.media.PlaybackParams
+import android.os.Build
 import com.facebook.react.bridge.*
 
 class AudioPlayerModule(reactContext: ReactApplicationContext) :
@@ -8,6 +10,7 @@ class AudioPlayerModule(reactContext: ReactApplicationContext) :
 
     private var player: MediaPlayer? = null
     private var completionPromise: Promise? = null
+    private var currentSpeed: Float = 1.0f
 
     override fun getName() = "AudioPlayer"
 
@@ -29,6 +32,9 @@ class AudioPlayerModule(reactContext: ReactApplicationContext) :
                 }
                 prepare()
                 start()
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && currentSpeed != 1.0f) {
+                    playbackParams = playbackParams.setSpeed(currentSpeed)
+                }
             }
         } catch (e: Exception) {
             completionPromise = null
@@ -40,9 +46,7 @@ class AudioPlayerModule(reactContext: ReactApplicationContext) :
     fun pause(promise: Promise) {
         try {
             player?.let {
-                if (it.isPlaying) {
-                    it.pause()
-                }
+                if (it.isPlaying) it.pause()
             }
             promise.resolve("paused")
         } catch (e: Exception) {
@@ -54,9 +58,7 @@ class AudioPlayerModule(reactContext: ReactApplicationContext) :
     fun resume(promise: Promise) {
         try {
             player?.let {
-                if (!it.isPlaying) {
-                    it.start()
-                }
+                if (!it.isPlaying) it.start()
             }
             promise.resolve("resumed")
         } catch (e: Exception) {
@@ -73,6 +75,51 @@ class AudioPlayerModule(reactContext: ReactApplicationContext) :
             promise.resolve("stopped")
         } catch (e: Exception) {
             promise.reject("STOP_ERROR", e.message, e)
+        }
+    }
+
+    @ReactMethod
+    fun getDuration(promise: Promise) {
+        try {
+            val dur = player?.duration ?: 0
+            promise.resolve(dur.toDouble())
+        } catch (e: Exception) {
+            promise.reject("DURATION_ERROR", e.message, e)
+        }
+    }
+
+    @ReactMethod
+    fun getCurrentPosition(promise: Promise) {
+        try {
+            val pos = player?.currentPosition ?: 0
+            promise.resolve(pos.toDouble())
+        } catch (e: Exception) {
+            promise.reject("POSITION_ERROR", e.message, e)
+        }
+    }
+
+    @ReactMethod
+    fun seekTo(positionMs: Double, promise: Promise) {
+        try {
+            player?.seekTo(positionMs.toInt())
+            promise.resolve("seeked")
+        } catch (e: Exception) {
+            promise.reject("SEEK_ERROR", e.message, e)
+        }
+    }
+
+    @ReactMethod
+    fun setSpeed(speed: Float, promise: Promise) {
+        try {
+            currentSpeed = speed
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                player?.let {
+                    it.playbackParams = it.playbackParams.setSpeed(speed)
+                }
+            }
+            promise.resolve("speed set")
+        } catch (e: Exception) {
+            promise.reject("SPEED_ERROR", e.message, e)
         }
     }
 

@@ -44,6 +44,42 @@ const STORAGE_KEYS = {
 
 type StatusType = 'idle' | 'loading' | 'success' | 'error';
 
+/** 将 PCM16 原始 base64 数据包装为 WAV base64，使 MediaPlayer 可播放 */
+function pcm16ToWavBase64(pcmBase64: string, sampleRate = 24000): string {
+  // base64 decode
+  const raw = atob(pcmBase64);
+  const pcmLen = raw.length;
+  const header = new ArrayBuffer(44);
+  const v = new DataView(header);
+  const writeStr = (off: number, s: string) => {
+    for (let i = 0; i < s.length; i++) v.setUint8(off + i, s.charCodeAt(i));
+  };
+  writeStr(0, 'RIFF');
+  v.setUint32(4, 36 + pcmLen, true);
+  writeStr(8, 'WAVE');
+  writeStr(12, 'fmt ');
+  v.setUint32(16, 16, true);
+  v.setUint16(20, 1, true);
+  v.setUint16(22, 1, true);
+  v.setUint32(24, sampleRate, true);
+  v.setUint32(28, sampleRate * 2, true);
+  v.setUint16(32, 2, true);
+  v.setUint16(34, 16, true);
+  writeStr(36, 'data');
+  v.setUint32(40, pcmLen, true);
+
+  // 合并 header + pcm 并 base64 encode
+  const hdrBytes = new Uint8Array(header);
+  const CHUNK = 8192;
+  const parts: string[] = [];
+  for (let i = 0; i < hdrBytes.length; i += CHUNK) {
+    parts.push(String.fromCharCode(...hdrBytes.subarray(i, i + CHUNK)));
+  }
+  // raw 已经是 binary string，直接拼接
+  parts.push(raw);
+  return btoa(parts.join(''));
+}
+
 export default function HomeScreen({navigation}: any) {
   const [config, setConfig] = useState<MiMoConfig>({
     apiKey: '',
@@ -64,6 +100,9 @@ export default function HomeScreen({navigation}: any) {
   const [responseMeta, setResponseMeta] = useState('');
   const [audioPath, setAudioPath] = useState('');
   const [playbackState, setPlaybackState] = useState<'idle' | 'playing' | 'paused'>('idle');
+  const [playbackPosition, setPlaybackPosition] = useState(0);
+  const [playbackDuration, setPlaybackDuration] = useState(0);
+  const [playbackSpeed, setPlaybackSpeed] = useState(1.0);
   const [synthesizing, setSynthesizing] = useState(false);
   const [lastRequestJson, setLastRequestJson] = useState('');
 
@@ -85,6 +124,17 @@ export default function HomeScreen({navigation}: any) {
       saveLastInput();
     }
   }, [assistantText, userPrompt, customStyles, selectedStyles, selectedTemplateId]);
+
+  // Poll playback position
+  useEffect(() => {
+    if (!isAudioActive) return;
+    const {AudioPlayer} = NativeModules;
+    AudioPlayer.getDuration().then((d: number) => setPlaybackDuration(d));
+    const id = setInterval(() => {
+      AudioPlayer.getCurrentPosition().then((p: number) => setPlaybackPosition(p));
+    }, 250);
+    return () => clearInterval(id);
+  }, [isAudioActive]);
 
   async function loadConfig() {
     const [apiKey, endpoint, format, voice, model] = await Promise.all([
@@ -219,10 +269,11 @@ export default function HomeScreen({navigation}: any) {
     try {
       const result = await synthesize(config, payload);
 
-      const ext = config.audioFormat.toLowerCase();
-      const filePath = `${RNFS.CachesDirectoryPath}/mimo-tts-output.${ext}`;
+      const isPcm = config.audioFormat.toLowerCase() === 'pcm16';
+      const filePath = `${RNFS.CachesDirectoryPath}/mimo-tts-output.wav`;
 
-      await RNFS.writeFile(filePath, result.audioBase64, 'base64');
+      const dataToWrite = isPcm ? pcm16ToWavBase64(result.audioBase64) : result.audioBase64;
+      await RNFS.writeFile(filePath, dataToWrite, 'base64');
 
       setAudioPath(filePath);
       setStatus('success');
@@ -292,6 +343,16 @@ export default function HomeScreen({navigation}: any) {
     }
   }
 
+  function handleSeek(position: number) {
+    setPlaybackPosition(position);
+    NativeModules.AudioPlayer.seekTo(position);
+  }
+
+  function handleSpeedChange(speed: number) {
+    setPlaybackSpeed(speed);
+    NativeModules.AudioPlayer.setSpeed(speed);
+  }
+
   function getStatusColor(): string {
     switch (status) {
       case 'loading': return '#8a4f18';
@@ -308,6 +369,39 @@ export default function HomeScreen({navigation}: any) {
       case 'error': return 'rgba(179, 53, 53, 0.12)';
       default: return 'rgba(94, 70, 47, 0.08)';
     }
+  }
+
+  function Seekbar({value, max, onSeek}: {value: number; max: number; onSeek: (v: number) => void}) {
+    const [trackWidth, setTrackWidth] = useState(0);
+    const ratio = max > 0 ? value / max : 0;
+
+    function handleTouch(e: any) {
+      const x = Math.max(0, Math.min(e.nativeEvent.locationX, trackWidth));
+      const newPos = (x / trackWidth) * max;
+      onSeek(newPos);
+    }
+
+    return (
+      <View
+        style={seekbarStyles.trackWrapper}
+        onLayout={e => setTrackWidth(e.nativeEvent.layout.width)}
+        onStartShouldSetResponder={() => true}
+        onMoveShouldSetResponder={() => true}
+        onResponderGrant={handleTouch}
+        onResponderMove={handleTouch}>
+        <View style={seekbarStyles.track}>
+          <View style={[seekbarStyles.fill, {width: `${ratio * 100}%`}]} />
+          <View style={[seekbarStyles.thumb, {left: `${ratio * 100}%`}]} />
+        </View>
+      </View>
+    );
+  }
+
+  function formatTime(ms: number): string {
+    const totalSec = Math.floor(ms / 1000);
+    const min = Math.floor(totalSec / 60);
+    const sec = totalSec % 60;
+    return `${min}:${sec.toString().padStart(2, '0')}`;
   }
 
   const finalContent = buildFinalContent();
@@ -498,12 +592,59 @@ export default function HomeScreen({navigation}: any) {
           ) : null}
 
           {/* 底部留白，避免被 FAB 遮挡 */}
-          <View style={{height: 140}} />
+          <View style={{height: canPlay || isAudioActive ? 200 : 140}} />
         </View>
       </ScrollView>
 
+      {/* 底部播放控制栏 */}
+      {(canPlay || isAudioActive) && (
+        <View style={styles.bottomBar}>
+          <View style={styles.speedRow}>
+            {[0.5, 1.0, 1.5, 2.0].map(s => (
+              <TouchableOpacity
+                key={s}
+                style={[styles.speedBtn, playbackSpeed === s && styles.speedBtnActive]}
+                onPress={() => handleSpeedChange(s)}>
+                <Text style={[styles.speedBtnText, playbackSpeed === s && styles.speedBtnTextActive]}>
+                  {s}x
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+          <View style={styles.playbackRow}>
+            <Text style={styles.timeText}>{formatTime(playbackPosition)}</Text>
+            <Seekbar value={playbackPosition} max={playbackDuration} onSeek={handleSeek} />
+            <Text style={styles.timeText}>{formatTime(playbackDuration)}</Text>
+            {isAudioActive ? (
+              <>
+                <TouchableOpacity
+                  style={[styles.ctrlBtn, styles.ctrlBtnPause]}
+                  onPress={playbackState === 'paused' ? handleResumeAudio : handlePauseAudio}>
+                  <Icon
+                    name={playbackState === 'paused' ? 'play-arrow' : 'pause'}
+                    size={22}
+                    color="#fff8ef"
+                  />
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.ctrlBtn, styles.ctrlBtnStop]}
+                  onPress={handleStopAudio}>
+                  <Icon name="stop" size={20} color="#fff8ef" />
+                </TouchableOpacity>
+              </>
+            ) : (
+              <TouchableOpacity
+                style={[styles.ctrlBtn, styles.ctrlBtnPlay]}
+                onPress={handlePlayAudio}>
+                <Icon name="play-arrow" size={24} color="#fff8ef" />
+              </TouchableOpacity>
+            )}
+          </View>
+        </View>
+      )}
+
       {/* 固定右下角 FAB 按钮 */}
-      <View style={styles.fabContainer}>
+      <View style={[styles.fabContainer, (canPlay || isAudioActive) && {bottom: 100}]}>
         <TouchableOpacity
           style={[styles.fab, styles.fabSynthesize, synthesizing && styles.fabDisabled]}
           onPress={handleSynthesize}
@@ -514,37 +655,6 @@ export default function HomeScreen({navigation}: any) {
             <Icon name="send" size={24} color="#fff8ef" />
           )}
         </TouchableOpacity>
-
-        {/* 播放中：停止 + 暂停；暂停中：停止 + 继续；空闲：播放 */}
-        {isAudioActive ? (
-          <View style={styles.fabRow}>
-            <TouchableOpacity
-              style={[styles.fab, styles.fabStop]}
-              onPress={handleStopAudio}>
-              <Icon name="stop" size={24} color="#fff8ef" />
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.fab, styles.fabPause]}
-              onPress={playbackState === 'paused' ? handleResumeAudio : handlePauseAudio}>
-              <Icon
-                name={playbackState === 'paused' ? 'play-arrow' : 'pause'}
-                size={24}
-                color="#fff8ef"
-              />
-            </TouchableOpacity>
-          </View>
-        ) : (
-          <TouchableOpacity
-            style={[styles.fab, styles.fabPlay, !canPlay && styles.fabDisabled]}
-            onPress={handlePlayAudio}
-            disabled={!canPlay}>
-            <Icon
-              name="play-arrow"
-              size={28}
-              color={canPlay ? '#fff8ef' : 'rgba(255,248,239,0.4)'}
-            />
-          </TouchableOpacity>
-        )}
       </View>
     </View>
   );
@@ -807,5 +917,99 @@ const styles = StyleSheet.create({
     width: 46,
     height: 46,
     backgroundColor: '#8a4f18',
+  },
+  // ── 底部播放控制栏 ──────────────────────────────────────────────
+  bottomBar: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    backgroundColor: '#f7f0e6',
+    paddingHorizontal: 14,
+    paddingTop: 10,
+    paddingBottom: 28,
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(63, 45, 28, 0.1)',
+  },
+  speedRow: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    gap: 8,
+    marginBottom: 8,
+  },
+  speedBtn: {
+    paddingHorizontal: 12,
+    paddingVertical: 4,
+    borderRadius: 12,
+    backgroundColor: 'rgba(199, 93, 44, 0.08)',
+  },
+  speedBtnActive: {
+    backgroundColor: '#c75d2c',
+  },
+  speedBtnText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#6b5646',
+  },
+  speedBtnTextActive: {
+    color: '#fff8ef',
+  },
+  playbackRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  timeText: {
+    fontSize: 11,
+    color: '#6b5646',
+    width: 36,
+    textAlign: 'center',
+  },
+  ctrlBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  ctrlBtnPlay: {
+    backgroundColor: '#c75d2c',
+  },
+  ctrlBtnPause: {
+    backgroundColor: '#8a4f18',
+  },
+  ctrlBtnStop: {
+    backgroundColor: '#b33535',
+  },
+});
+
+const seekbarStyles = StyleSheet.create({
+  trackWrapper: {
+    flex: 1,
+    height: 28,
+    justifyContent: 'center',
+  },
+  track: {
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: 'rgba(63, 45, 28, 0.15)',
+    overflow: 'visible',
+  },
+  fill: {
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: '#c75d2c',
+    position: 'absolute',
+    top: 0,
+    left: 0,
+  },
+  thumb: {
+    position: 'absolute',
+    top: -5,
+    width: 14,
+    height: 14,
+    borderRadius: 7,
+    backgroundColor: '#c75d2c',
+    marginLeft: -7,
   },
 });
