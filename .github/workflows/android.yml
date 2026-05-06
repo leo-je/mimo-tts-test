@@ -59,13 +59,17 @@ jobs:
           name: mimo-tts-test-release
           path: android/app/build/outputs/apk/release/app-release.apk
           
-      - name: Upload renamed artifacts to release
+      - name: Create release with tagged assets
         shell: bash
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          TAG=$(date "+%Y-%m-%d-%H-%M-%S")
-          appfile="android/app/build/outputs/apk/release/app-release.apk"
+          TAG=$(date "+%Y%m%d%H%M%S")
+          APK_DIR="android/app/build/outputs/apk/release"
+          mv "$APK_DIR/app-release.apk" "$APK_DIR/mimo-tts-test-release.${TAG}.apk"
+          cd "$APK_DIR"
+          zip "mimo-tts-test-release.${TAG}.zip" "mimo-tts-test-release.${TAG}.apk"
           echo "Creating release: $TAG"
-          gh release create "$TAG" "$appfile" --title "$TAG" --notes "Auto generated release APK" --prerelease
+          gh release create "$TAG" "mimo-tts-test-release.${TAG}.apk" "mimo-tts-test-release.${TAG}.zip" \
+            --title "$TAG" --notes "Auto generated release APK" --prerelease
       
