@@ -27,7 +27,7 @@ import {
   buildRequestPayload,
   synthesize,
 } from '../services/MiMoTTSService';
-import {MiMoConfig, TestTemplate, TTSRequest} from '../types';
+import {MiMoConfig, TestTemplate, TTSRequest, SynthesisRecord} from '../types';
 import {useTheme} from '../theme/ThemeContext';
 import {AppTheme} from '../theme/themes';
 
@@ -42,6 +42,7 @@ const STORAGE_KEYS = {
   customStyles: 'mimo-tts-custom-styles',
   selectedStyles: 'mimo-tts-selected-styles',
   selectedTemplateId: 'mimo-tts-template-id',
+  history: 'mimo-tts-history',
 };
 
 type StatusType = 'idle' | 'loading' | 'success' | 'error';
@@ -108,6 +109,8 @@ export default function HomeScreen({navigation}: any) {
   const [playbackSpeed, setPlaybackSpeed] = useState(1.0);
   const [synthesizing, setSynthesizing] = useState(false);
   const [lastRequestJson, setLastRequestJson] = useState('');
+  const [history, setHistory] = useState<SynthesisRecord[]>([]);
+  const [showHistory, setShowHistory] = useState(false);
 
   const assistantInputRef = useRef<TextInput>(null);
   const [cursorPos, setCursorPos] = useState(0);
@@ -118,9 +121,26 @@ export default function HomeScreen({navigation}: any) {
   useEffect(() => {
     loadConfig();
     loadLastInput();
+    loadHistory().then(records => {
+      setHistory(records);
+      if (records.length > 0) {
+        loadRecord(records[0]);
+      }
+    });
     const unsubscribe = navigation.addListener('focus', loadConfig);
     return unsubscribe;
   }, [navigation]);
+
+  function loadRecord(record: SynthesisRecord) {
+    setAssistantText(record.text);
+    setUserPrompt(record.userPrompt);
+    setCustomStyles(record.customStyles);
+    setSelectedStyles([...record.styles]);
+    setSelectedTemplateId(record.templateId);
+    setAudioPath(record.audioPath);
+    setStatus('success');
+    setStatusText('合成成功');
+  }
 
   useEffect(() => {
     if (initialLoadDone.current) {
@@ -189,6 +209,48 @@ export default function HomeScreen({navigation}: any) {
       [STORAGE_KEYS.selectedStyles, JSON.stringify(selectedStyles)],
       [STORAGE_KEYS.selectedTemplateId, selectedTemplateId],
     ]);
+  }
+
+  // ── 记录管理 ──────────────────────────────────────────────────────
+  const MAX_HISTORY = 20;
+
+  async function loadHistory(): Promise<SynthesisRecord[]> {
+    const raw = await AsyncStorage.getItem(STORAGE_KEYS.history);
+    if (!raw) return [];
+    try {
+      return JSON.parse(raw);
+    } catch {
+      return [];
+    }
+  }
+
+  async function saveHistory(records: SynthesisRecord[]) {
+    setHistory(records);
+    await AsyncStorage.setItem(STORAGE_KEYS.history, JSON.stringify(records));
+  }
+
+  async function addRecord(record: SynthesisRecord) {
+    const updated = [record, ...history].slice(0, MAX_HISTORY);
+    // 删除超出限制的旧音频文件
+    if (updated.length < history.length + 1) {
+      const removed = history.slice(MAX_HISTORY - 1);
+      for (const r of removed) {
+        RNFS.exists(r.audioPath).then(exists => {
+          if (exists) RNFS.unlink(r.audioPath);
+        });
+      }
+    }
+    await saveHistory(updated);
+  }
+
+  async function deleteRecord(id: string) {
+    const target = history.find(r => r.id === id);
+    const updated = history.filter(r => r.id !== id);
+    await saveHistory(updated);
+    if (target) {
+      const exists = await RNFS.exists(target.audioPath);
+      if (exists) await RNFS.unlink(target.audioPath);
+    }
   }
 
   function applyTemplate(template: TestTemplate) {
@@ -275,12 +337,19 @@ export default function HomeScreen({navigation}: any) {
       const result = await synthesize(config, payload);
 
       const isPcm = config.audioFormat.toLowerCase() === 'pcm16';
-      const filePath = `${RNFS.CachesDirectoryPath}/mimo-tts-output.wav`;
+      const cachePath = `${RNFS.CachesDirectoryPath}/mimo-tts-output.wav`;
+      const docsPath = `${RNFS.DocumentDirectoryPath}/mimo-tts-records`;
+      const recordId = Date.now().toString();
+      const recordPath = `${docsPath}/${recordId}.wav`;
 
       const dataToWrite = isPcm ? pcm16ToWavBase64(result.audioBase64) : result.audioBase64;
-      await RNFS.writeFile(filePath, dataToWrite, 'base64');
+      await RNFS.writeFile(cachePath, dataToWrite, 'base64');
 
-      setAudioPath(filePath);
+      // 确保目录存在，然后复制到持久目录
+      await RNFS.mkdir(docsPath);
+      await RNFS.copyFile(cachePath, recordPath);
+
+      setAudioPath(recordPath);
       setStatus('success');
       setStatusText('合成成功');
       setResponseMeta(
@@ -290,12 +359,28 @@ export default function HomeScreen({navigation}: any) {
             created: result.meta.created,
             voice: result.meta.voice,
             format: result.meta.format,
-            savedTo: filePath,
+            savedTo: recordPath,
           },
           null,
           2,
         ),
       );
+
+      // 保存记录
+      const record: SynthesisRecord = {
+        id: recordId,
+        timestamp: Date.now(),
+        text: assistantText,
+        styles: [...selectedStyles],
+        customStyles,
+        userPrompt,
+        templateId: selectedTemplateId,
+        audioPath: recordPath,
+        model: config.model,
+        voice: config.voice,
+        format: config.audioFormat,
+      };
+      addRecord(record);
     } catch (error: any) {
       setStatus('error');
       setStatusText('请求失败');
@@ -603,9 +688,19 @@ export default function HomeScreen({navigation}: any) {
       </ScrollView>
 
       {/* 底部播放控制栏 */}
-      {(canPlay || isAudioActive) && (
+      {(canPlay || isAudioActive || history.length > 0) && (
         <View style={styles.bottomBar}>
           <View style={styles.speedRow}>
+            <TouchableOpacity
+              style={styles.historyBtn}
+              onPress={() => setShowHistory(true)}>
+              <Icon name="history" size={18} color={theme.textSecondary} />
+              {history.length > 0 && (
+                <View style={styles.historyBadge}>
+                  <Text style={styles.historyBadgeText}>{history.length}</Text>
+                </View>
+              )}
+            </TouchableOpacity>
             {[0.5, 1.0, 1.5, 2.0].map(s => (
               <TouchableOpacity
                 key={s}
@@ -650,7 +745,7 @@ export default function HomeScreen({navigation}: any) {
       )}
 
       {/* 固定右下角 FAB 按钮 */}
-      <View style={[styles.fabContainer, (canPlay || isAudioActive) && {bottom: 100}]}>
+      <View style={[styles.fabContainer, (canPlay || isAudioActive || history.length > 0) && {bottom: 100}]}>
         <TouchableOpacity
           style={[styles.fab, styles.fabSynthesize, synthesizing && styles.fabDisabled]}
           onPress={handleSynthesize}
@@ -662,6 +757,60 @@ export default function HomeScreen({navigation}: any) {
           )}
         </TouchableOpacity>
       </View>
+
+      {/* 记录列表弹窗 */}
+      <Modal visible={showHistory} animationType="slide" transparent>
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>合成记录 ({history.length})</Text>
+              <TouchableOpacity onPress={() => setShowHistory(false)}>
+                <Icon name="close" size={24} color={theme.textSecondary} />
+              </TouchableOpacity>
+            </View>
+            <ScrollView style={styles.historyScroll}>
+              {history.length === 0 ? (
+                <Text style={styles.historyEmpty}>暂无记录</Text>
+              ) : (
+                history.map((record, index) => {
+                  const date = new Date(record.timestamp);
+                  const timeStr = `${date.getMonth() + 1}/${date.getDate()} ${date.getHours()}:${date.getMinutes().toString().padStart(2, '0')}`;
+                  return (
+                    <View key={record.id} style={styles.historyItem}>
+                      <View style={styles.historyItemContent}>
+                        <Text style={styles.historyItemTime}>{timeStr}</Text>
+                        <Text style={styles.historyItemText} numberOfLines={2}>
+                          {record.text}
+                        </Text>
+                        {record.styles.length > 0 && (
+                          <Text style={styles.historyItemStyles}>
+                            {record.styles.join(' · ')}
+                          </Text>
+                        )}
+                      </View>
+                      <View style={styles.historyItemActions}>
+                        <TouchableOpacity
+                          style={styles.historyPlayBtn}
+                          onPress={() => {
+                            loadRecord(record);
+                            setShowHistory(false);
+                          }}>
+                          <Icon name="play-arrow" size={20} color={theme.textOnPrimary} />
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                          style={styles.historyDeleteBtn}
+                          onPress={() => deleteRecord(record.id)}>
+                          <Icon name="delete" size={18} color={theme.textOnPrimary} />
+                        </TouchableOpacity>
+                      </View>
+                    </View>
+                  );
+                })
+              )}
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -940,8 +1089,92 @@ function makeStyles(theme: AppTheme) { return StyleSheet.create({
   speedRow: {
     flexDirection: 'row',
     justifyContent: 'center',
+    alignItems: 'center',
     gap: 8,
     marginBottom: 8,
+  },
+  historyBtn: {
+    width: 36,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: theme.accentSubtle,
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexDirection: 'row',
+    position: 'relative',
+  },
+  historyBadge: {
+    position: 'absolute',
+    top: -4,
+    right: -6,
+    backgroundColor: theme.accent,
+    borderRadius: 8,
+    minWidth: 16,
+    height: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 4,
+  },
+  historyBadgeText: {
+    fontSize: 9,
+    fontWeight: '700',
+    color: theme.textOnPrimary,
+  },
+  historyScroll: {
+    paddingHorizontal: 18,
+    paddingTop: 10,
+  },
+  historyEmpty: {
+    textAlign: 'center',
+    color: theme.textSecondary,
+    paddingVertical: 30,
+    fontSize: 14,
+  },
+  historyItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: theme.border,
+  },
+  historyItemContent: {
+    flex: 1,
+    marginRight: 10,
+  },
+  historyItemTime: {
+    fontSize: 11,
+    color: theme.textSecondary,
+    marginBottom: 2,
+  },
+  historyItemText: {
+    fontSize: 14,
+    color: theme.textPrimary,
+    lineHeight: 20,
+  },
+  historyItemStyles: {
+    fontSize: 11,
+    color: theme.accent,
+    marginTop: 3,
+  },
+  historyItemActions: {
+    flexDirection: 'row',
+    gap: 6,
+  },
+  historyPlayBtn: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: theme.accent,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  historyDeleteBtn: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: '#b33535',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   speedBtn: {
     paddingHorizontal: 12,

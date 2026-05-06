@@ -42,3 +42,17 @@ export interface TestTemplate {
   userPrompt: string;
   assistantText: string;
 }
+
+export interface SynthesisRecord {
+  id: string;
+  timestamp: number;
+  text: string;
+  styles: string[];
+  customStyles: string;
+  userPrompt: string;
+  templateId: string;
+  audioPath: string;
+  model: string;
+  voice: string;
+  format: string;
+}
