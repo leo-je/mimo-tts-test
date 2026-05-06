@@ -28,6 +28,8 @@ import {
   synthesize,
 } from '../services/MiMoTTSService';
 import {MiMoConfig, TestTemplate, TTSRequest} from '../types';
+import {useTheme} from '../theme/ThemeContext';
+import {AppTheme} from '../theme/themes';
 
 const STORAGE_KEYS = {
   apiKey: 'mimo-tts-api-key',
@@ -81,6 +83,7 @@ function pcm16ToWavBase64(pcmBase64: string, sampleRate = 24000): string {
 }
 
 export default function HomeScreen({navigation}: any) {
+  const theme = useTheme();
   const [config, setConfig] = useState<MiMoConfig>({
     apiKey: '',
     endpoint: DEFAULT_CONFIG.endpoint,
@@ -124,6 +127,8 @@ export default function HomeScreen({navigation}: any) {
       saveLastInput();
     }
   }, [assistantText, userPrompt, customStyles, selectedStyles, selectedTemplateId]);
+
+  const isAudioActive = playbackState !== 'idle';
 
   // Poll playback position
   useEffect(() => {
@@ -404,9 +409,10 @@ export default function HomeScreen({navigation}: any) {
     return `${min}:${sec.toString().padStart(2, '0')}`;
   }
 
+  const styles = makeStyles(theme);
+  const seekbarStyles = makeSeekbarStyles(theme);
   const finalContent = buildFinalContent();
   const canPlay = status === 'success' && !!audioPath;
-  const isAudioActive = playbackState !== 'idle';
 
   return (
     <View style={styles.root}>
@@ -418,7 +424,7 @@ export default function HomeScreen({navigation}: any) {
             <TouchableOpacity
               style={styles.settingsBtn}
               onPress={() => navigation.navigate('Settings')}>
-              <Icon name="settings" size={22} color="#c75d2c" />
+              <Icon name="settings" size={22} color={theme.accent} />
             </TouchableOpacity>
           </View>
           <View style={styles.pickerWrapper}>
@@ -505,7 +511,7 @@ export default function HomeScreen({navigation}: any) {
             <TouchableOpacity
               style={styles.insertTagBtn}
               onPress={() => setShowTagPanel(true)}>
-              <Icon name="label" size={16} color="#c75d2c" />
+              <Icon name="label" size={16} color={theme.accent} />
               <Text style={styles.insertTagBtnText}>插入标签</Text>
             </TouchableOpacity>
           </View>
@@ -535,7 +541,7 @@ export default function HomeScreen({navigation}: any) {
               <View style={styles.modalHeader}>
                 <Text style={styles.modalTitle}>选择要插入的标签</Text>
                 <TouchableOpacity onPress={() => setShowTagPanel(false)}>
-                  <Icon name="close" size={24} color="#6b5646" />
+                  <Icon name="close" size={24} color={theme.textSecondary} />
                 </TouchableOpacity>
               </View>
               <ScrollView style={styles.modalScroll} contentContainerStyle={styles.modalChipGrid}>
@@ -623,20 +629,20 @@ export default function HomeScreen({navigation}: any) {
                   <Icon
                     name={playbackState === 'paused' ? 'play-arrow' : 'pause'}
                     size={22}
-                    color="#fff8ef"
+                    color={theme.textOnPrimary}
                   />
                 </TouchableOpacity>
                 <TouchableOpacity
                   style={[styles.ctrlBtn, styles.ctrlBtnStop]}
                   onPress={handleStopAudio}>
-                  <Icon name="stop" size={20} color="#fff8ef" />
+                  <Icon name="stop" size={20} color={theme.textOnPrimary} />
                 </TouchableOpacity>
               </>
             ) : (
               <TouchableOpacity
                 style={[styles.ctrlBtn, styles.ctrlBtnPlay]}
                 onPress={handlePlayAudio}>
-                <Icon name="play-arrow" size={24} color="#fff8ef" />
+                <Icon name="play-arrow" size={24} color={theme.textOnPrimary} />
               </TouchableOpacity>
             )}
           </View>
@@ -650,9 +656,9 @@ export default function HomeScreen({navigation}: any) {
           onPress={handleSynthesize}
           disabled={synthesizing}>
           {synthesizing ? (
-            <ActivityIndicator color="#fff8ef" size="small" />
+            <ActivityIndicator color={theme.textOnPrimary} size="small" />
           ) : (
-            <Icon name="send" size={24} color="#fff8ef" />
+            <Icon name="send" size={24} color={theme.textOnPrimary} />
           )}
         </TouchableOpacity>
       </View>
@@ -663,10 +669,10 @@ export default function HomeScreen({navigation}: any) {
 const FAB_SIZE_SYNTH = 52;
 const FAB_SIZE_PLAY = 60;
 
-const styles = StyleSheet.create({
+function makeStyles(theme: AppTheme) { return StyleSheet.create({
   root: {
     flex: 1,
-    backgroundColor: '#f7f0e6',
+    backgroundColor: theme.bg,
   },
   container: {
     flex: 1,
@@ -676,12 +682,12 @@ const styles = StyleSheet.create({
     paddingBottom: 20,
   },
   card: {
-    backgroundColor: 'rgba(255, 250, 244, 0.92)',
+    backgroundColor: theme.surface,
     borderRadius: 16,
     padding: 18,
     marginBottom: 14,
     borderWidth: 1,
-    borderColor: 'rgba(63, 45, 28, 0.12)',
+    borderColor: theme.border,
   },
   cardHeader: {
     flexDirection: 'row',
@@ -692,58 +698,58 @@ const styles = StyleSheet.create({
   cardTitle: {
     fontSize: 17,
     fontWeight: '700',
-    color: '#24170e',
+    color: theme.textPrimary,
     marginBottom: 4,
   },
   settingsBtn: {
     padding: 6,
     borderRadius: 8,
-    backgroundColor: 'rgba(199, 93, 44, 0.08)',
+    backgroundColor: theme.accentSubtle,
   },
   pickerWrapper: {
     borderWidth: 1,
-    borderColor: 'rgba(63, 45, 28, 0.22)',
+    borderColor: theme.borderInput,
     borderRadius: 12,
-    backgroundColor: 'rgba(255, 252, 248, 0.92)',
+    backgroundColor: theme.surfaceInput,
     overflow: 'hidden',
   },
   quickInfo: {
     marginTop: 10,
     padding: 10,
     borderRadius: 10,
-    backgroundColor: 'rgba(199, 93, 44, 0.06)',
+    backgroundColor: theme.accentSubtle,
   },
   quickInfoText: {
     fontSize: 13,
-    color: '#6b5646',
+    color: theme.textSecondary,
     textAlign: 'center',
   },
   label: {
     fontSize: 13,
-    color: '#6b5646',
+    color: theme.textSecondary,
     marginBottom: 6,
     marginTop: 12,
   },
   input: {
     borderWidth: 1,
-    borderColor: 'rgba(63, 45, 28, 0.22)',
+    borderColor: theme.borderInput,
     borderRadius: 12,
     padding: 14,
     fontSize: 15,
-    backgroundColor: 'rgba(255, 252, 248, 0.92)',
-    color: '#24170e',
+    backgroundColor: theme.surfaceInput,
+    color: theme.textPrimary,
   },
   textarea: {
     minHeight: 80,
     textAlignVertical: 'top',
   },
   textareaFocused: {
-    borderColor: 'rgba(199, 93, 44, 0.6)',
+    borderColor: theme.borderFocus,
     borderWidth: 2,
   },
   tip: {
     fontSize: 12,
-    color: '#6b5646',
+    color: theme.textSecondary,
     lineHeight: 18,
     marginTop: 10,
     opacity: 0.8,
@@ -756,26 +762,26 @@ const styles = StyleSheet.create({
   },
   chip: {
     borderWidth: 1,
-    borderColor: 'rgba(173, 102, 54, 0.24)',
-    backgroundColor: 'rgba(255, 245, 235, 0.95)',
+    borderColor: theme.borderChip,
+    backgroundColor: theme.surfaceAlt,
     borderRadius: 999,
     paddingHorizontal: 12,
     paddingVertical: 8,
   },
   chipActive: {
-    backgroundColor: '#c75d2c',
+    backgroundColor: theme.accent,
     borderColor: 'transparent',
   },
   chipText: {
     fontSize: 13,
-    color: '#24170e',
+    color: theme.textPrimary,
   },
   chipTextActive: {
-    color: '#fff6ef',
+    color: theme.textOnAccent,
   },
   ghostBtnText: {
     fontSize: 13,
-    color: '#9f3e17',
+    color: theme.accentDark,
     fontWeight: '600',
   },
   assistantLabelRow: {
@@ -793,22 +799,22 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     borderRadius: 999,
     alignSelf: 'flex-start',
-    backgroundColor: 'rgba(199, 93, 44, 0.08)',
+    backgroundColor: theme.accentSubtle,
     borderWidth: 1,
-    borderColor: 'rgba(199, 93, 44, 0.16)',
+    borderColor: theme.borderChip,
   },
   insertTagBtnText: {
     fontSize: 13,
-    color: '#c75d2c',
+    color: theme.accent,
     fontWeight: '600',
   },
   modalOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(36, 23, 14, 0.5)',
+    backgroundColor: theme.overlay,
     justifyContent: 'flex-end',
   },
   modalContent: {
-    backgroundColor: '#fff8ef',
+    backgroundColor: theme.modalBg,
     borderTopLeftRadius: 20,
     borderTopRightRadius: 20,
     maxHeight: '70%',
@@ -820,12 +826,12 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     padding: 18,
     borderBottomWidth: 1,
-    borderBottomColor: 'rgba(63, 45, 28, 0.1)',
+    borderBottomColor: theme.border,
   },
   modalTitle: {
     fontSize: 16,
     fontWeight: '700',
-    color: '#24170e',
+    color: theme.textPrimary,
   },
   modalScroll: {
     paddingHorizontal: 18,
@@ -838,15 +844,15 @@ const styles = StyleSheet.create({
   },
   modalChip: {
     borderWidth: 1,
-    borderColor: 'rgba(173, 102, 54, 0.24)',
-    backgroundColor: 'rgba(255, 245, 235, 0.95)',
+    borderColor: theme.borderChip,
+    backgroundColor: theme.surfaceAlt,
     borderRadius: 12,
     paddingHorizontal: 14,
     paddingVertical: 10,
   },
   modalChipText: {
     fontSize: 14,
-    color: '#24170e',
+    color: theme.textPrimary,
   },
   codeBlock: {
     backgroundColor: '#261a11',
@@ -861,7 +867,7 @@ const styles = StyleSheet.create({
   codeText: {
     fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
     fontSize: 12,
-    color: '#f9e9d5',
+    color: theme.codeText,
     lineHeight: 18,
   },
   statusBadge: {
@@ -894,15 +900,15 @@ const styles = StyleSheet.create({
   fabSynthesize: {
     width: FAB_SIZE_SYNTH,
     height: FAB_SIZE_SYNTH,
-    backgroundColor: '#9f3e17',
+    backgroundColor: theme.accentDark,
   },
   fabPlay: {
     width: FAB_SIZE_PLAY,
     height: FAB_SIZE_PLAY,
-    backgroundColor: '#c75d2c',
+    backgroundColor: theme.accent,
   },
   fabDisabled: {
-    backgroundColor: 'rgba(159, 62, 23, 0.35)',
+    backgroundColor: theme.disabled,
   },
   fabRow: {
     flexDirection: 'row',
@@ -924,12 +930,12 @@ const styles = StyleSheet.create({
     bottom: 0,
     left: 0,
     right: 0,
-    backgroundColor: '#f7f0e6',
+    backgroundColor: theme.bg,
     paddingHorizontal: 14,
     paddingTop: 10,
     paddingBottom: 28,
     borderTopWidth: 1,
-    borderTopColor: 'rgba(63, 45, 28, 0.1)',
+    borderTopColor: theme.border,
   },
   speedRow: {
     flexDirection: 'row',
@@ -941,18 +947,18 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 4,
     borderRadius: 12,
-    backgroundColor: 'rgba(199, 93, 44, 0.08)',
+    backgroundColor: theme.accentSubtle,
   },
   speedBtnActive: {
-    backgroundColor: '#c75d2c',
+    backgroundColor: theme.accent,
   },
   speedBtnText: {
     fontSize: 12,
     fontWeight: '700',
-    color: '#6b5646',
+    color: theme.textSecondary,
   },
   speedBtnTextActive: {
-    color: '#fff8ef',
+    color: theme.textOnPrimary,
   },
   playbackRow: {
     flexDirection: 'row',
@@ -961,7 +967,7 @@ const styles = StyleSheet.create({
   },
   timeText: {
     fontSize: 11,
-    color: '#6b5646',
+    color: theme.textSecondary,
     width: 36,
     textAlign: 'center',
   },
@@ -973,7 +979,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   ctrlBtnPlay: {
-    backgroundColor: '#c75d2c',
+    backgroundColor: theme.accent,
   },
   ctrlBtnPause: {
     backgroundColor: '#8a4f18',
@@ -981,9 +987,9 @@ const styles = StyleSheet.create({
   ctrlBtnStop: {
     backgroundColor: '#b33535',
   },
-});
+}); }
 
-const seekbarStyles = StyleSheet.create({
+function makeSeekbarStyles(theme: AppTheme) { return StyleSheet.create({
   trackWrapper: {
     flex: 1,
     height: 28,
@@ -992,13 +998,13 @@ const seekbarStyles = StyleSheet.create({
   track: {
     height: 4,
     borderRadius: 2,
-    backgroundColor: 'rgba(63, 45, 28, 0.15)',
+    backgroundColor: theme.border,
     overflow: 'visible',
   },
   fill: {
     height: 4,
     borderRadius: 2,
-    backgroundColor: '#c75d2c',
+    backgroundColor: theme.accent,
     position: 'absolute',
     top: 0,
     left: 0,
@@ -1009,7 +1015,7 @@ const seekbarStyles = StyleSheet.create({
     width: 14,
     height: 14,
     borderRadius: 7,
-    backgroundColor: '#c75d2c',
+    backgroundColor: theme.accent,
     marginLeft: -7,
   },
-});
+}); }
