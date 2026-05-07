@@ -56,3 +56,20 @@ export interface SynthesisRecord {
   voice: string;
   format: string;
 }
+
+export interface AudioPlayerModule {
+  play(path: string): Promise<void>;
+  stop(): Promise<void>;
+  pause(): Promise<void>;
+  resume(): Promise<void>;
+  seekTo(position: number): void;
+  setSpeed(speed: number): void;
+  getDuration(): Promise<number>;
+  getCurrentPosition(): Promise<number>;
+}
+
+export interface NavigationProp {
+  navigate(name: string, params?: object): void;
+  addListener(event: string, callback: () => void): () => void;
+  goBack(): void;
+}

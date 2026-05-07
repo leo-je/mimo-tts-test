@@ -1,4 +1,5 @@
 import {MiMoConfig, TTSRequest, TTSResponse} from '../types';
+import {API_TIMEOUT_MS} from '../constants/styles';
 
 /**
  * 构建风格前缀，格式：(风格1 风格2)
@@ -72,15 +73,24 @@ export function buildRequestPayload(
 export async function synthesize(
   config: MiMoConfig,
   payload: TTSRequest,
-): Promise<{audioBase64: string; meta: any}> {
-  const response = await fetch(config.endpoint, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'api-key': config.apiKey,
-    },
-    body: JSON.stringify(payload),
-  });
+): Promise<{audioBase64: string; meta: {id: string; created: number; voice?: string; format: string}}> {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), API_TIMEOUT_MS);
+
+  let response;
+  try {
+    response = await fetch(config.endpoint, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'api-key': config.apiKey,
+      },
+      body: JSON.stringify(payload),
+      signal: controller.signal,
+    });
+  } finally {
+    clearTimeout(timeoutId);
+  }
 
   const json: TTSResponse = await response.json();
 

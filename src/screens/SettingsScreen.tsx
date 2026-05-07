@@ -15,20 +15,13 @@ import {
   VOICE_OPTIONS,
   AUDIO_FORMAT_OPTIONS,
   DEFAULT_CONFIG,
+  STORAGE_KEYS,
 } from '../constants/styles';
-import {MiMoConfig} from '../types';
+import {MiMoConfig, NavigationProp} from '../types';
 import {useTheme, useThemeManager} from '../theme/ThemeContext';
 import {AppTheme} from '../theme/themes';
 
-const STORAGE_KEYS = {
-  apiKey: 'mimo-tts-api-key',
-  endpoint: 'mimo-tts-endpoint',
-  format: 'mimo-tts-format',
-  voice: 'mimo-tts-voice',
-  model: 'mimo-tts-model',
-};
-
-export default function SettingsScreen({navigation}: any) {
+export default function SettingsScreen({navigation}: {navigation: NavigationProp}) {
   const theme = useTheme();
   const {themeId, setThemeId, presets} = useThemeManager();
   const [config, setConfig] = useState<MiMoConfig>({

@@ -20,6 +20,17 @@ export interface AppTheme {
   borderInput: string;
   borderChip: string;
   borderFocus: string;
+  // status colors
+  statusLoading: string;
+  statusLoadingBg: string;
+  statusSuccess: string;
+  statusSuccessBg: string;
+  statusError: string;
+  statusErrorBg: string;
+  statusIdle: string;
+  statusIdleBg: string;
+  // code block
+  codeBlockBg: string;
   // overlay / misc
   overlay: string;
   disabled: string;
@@ -51,6 +62,15 @@ const warmBrown: AppTheme = {
   borderInput: 'rgba(63, 45, 28, 0.22)',
   borderChip: 'rgba(173, 102, 54, 0.24)',
   borderFocus: 'rgba(199, 93, 44, 0.6)',
+  statusLoading: '#8a4f18',
+  statusLoadingBg: 'rgba(244, 179, 112, 0.2)',
+  statusSuccess: '#1e7f53',
+  statusSuccessBg: 'rgba(30, 127, 83, 0.14)',
+  statusError: '#b33535',
+  statusErrorBg: 'rgba(179, 53, 53, 0.12)',
+  statusIdle: '#6b5646',
+  statusIdleBg: 'rgba(94, 70, 47, 0.08)',
+  codeBlockBg: '#261a11',
   overlay: 'rgba(36, 23, 14, 0.5)',
   disabled: 'rgba(159, 62, 23, 0.35)',
 };
@@ -74,6 +94,15 @@ const deepBlue: AppTheme = {
   borderInput: 'rgba(51, 65, 85, 0.22)',
   borderChip: 'rgba(37, 99, 235, 0.20)',
   borderFocus: 'rgba(37, 99, 235, 0.6)',
+  statusLoading: '#b45309',
+  statusLoadingBg: 'rgba(251, 191, 36, 0.15)',
+  statusSuccess: '#15803d',
+  statusSuccessBg: 'rgba(22, 163, 74, 0.12)',
+  statusError: '#dc2626',
+  statusErrorBg: 'rgba(220, 38, 38, 0.10)',
+  statusIdle: '#475569',
+  statusIdleBg: 'rgba(71, 85, 105, 0.08)',
+  codeBlockBg: '#1e293b',
   overlay: 'rgba(15, 23, 42, 0.5)',
   disabled: 'rgba(29, 78, 216, 0.35)',
 };
@@ -97,6 +126,15 @@ const forestGreen: AppTheme = {
   borderInput: 'rgba(40, 60, 30, 0.22)',
   borderChip: 'rgba(22, 163, 74, 0.20)',
   borderFocus: 'rgba(22, 163, 74, 0.6)',
+  statusLoading: '#a16207',
+  statusLoadingBg: 'rgba(234, 179, 8, 0.15)',
+  statusSuccess: '#166534',
+  statusSuccessBg: 'rgba(22, 101, 52, 0.12)',
+  statusError: '#b91c1c',
+  statusErrorBg: 'rgba(185, 28, 28, 0.10)',
+  statusIdle: '#4a5d3e',
+  statusIdleBg: 'rgba(74, 93, 62, 0.08)',
+  codeBlockBg: '#1a2e1a',
   overlay: 'rgba(20, 33, 15, 0.5)',
   disabled: 'rgba(21, 128, 61, 0.35)',
 };
@@ -120,6 +158,15 @@ const sakuraPink: AppTheme = {
   borderInput: 'rgba(80, 30, 40, 0.22)',
   borderChip: 'rgba(225, 29, 72, 0.20)',
   borderFocus: 'rgba(225, 29, 72, 0.6)',
+  statusLoading: '#b45309',
+  statusLoadingBg: 'rgba(251, 191, 36, 0.15)',
+  statusSuccess: '#15803d',
+  statusSuccessBg: 'rgba(22, 163, 74, 0.12)',
+  statusError: '#dc2626',
+  statusErrorBg: 'rgba(220, 38, 38, 0.10)',
+  statusIdle: '#6b4650',
+  statusIdleBg: 'rgba(107, 70, 80, 0.08)',
+  codeBlockBg: '#2a1018',
   overlay: 'rgba(42, 10, 18, 0.5)',
   disabled: 'rgba(190, 18, 60, 0.35)',
 };
@@ -143,6 +190,15 @@ const darkMode: AppTheme = {
   borderInput: 'rgba(200, 200, 230, 0.18)',
   borderChip: 'rgba(99, 102, 241, 0.25)',
   borderFocus: 'rgba(99, 102, 241, 0.6)',
+  statusLoading: '#f59e0b',
+  statusLoadingBg: 'rgba(245, 158, 11, 0.2)',
+  statusSuccess: '#34d399',
+  statusSuccessBg: 'rgba(52, 211, 153, 0.15)',
+  statusError: '#f87171',
+  statusErrorBg: 'rgba(248, 113, 113, 0.15)',
+  statusIdle: '#9896a8',
+  statusIdleBg: 'rgba(152, 150, 168, 0.10)',
+  codeBlockBg: '#12122a',
   overlay: 'rgba(10, 10, 20, 0.7)',
   disabled: 'rgba(79, 70, 229, 0.35)',
 };

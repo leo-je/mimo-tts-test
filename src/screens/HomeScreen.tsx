@@ -10,6 +10,8 @@ import {
   ActivityIndicator,
   Platform,
   NativeModules,
+  NativeSyntheticEvent,
+  TextInputSelectionChangeEventData,
   Modal,
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -20,6 +22,11 @@ import {
   STYLE_OPTIONS,
   AUDIO_TAG_OPTIONS,
   DEFAULT_CONFIG,
+  STORAGE_KEYS,
+  PLAYBACK_POLL_INTERVAL_MS,
+  MAX_HISTORY,
+  TAG_INSERT_DELAY_MS,
+  WAV_CHUNK_SIZE,
 } from '../constants/styles';
 import {TEMPLATE_LIBRARY} from '../constants/templates';
 import {
@@ -27,29 +34,25 @@ import {
   buildRequestPayload,
   synthesize,
 } from '../services/MiMoTTSService';
-import {MiMoConfig, TestTemplate, TTSRequest, SynthesisRecord} from '../types';
+import {
+  MiMoConfig,
+  TestTemplate,
+  TTSRequest,
+  SynthesisRecord,
+  AudioPlayerModule,
+  NavigationProp,
+} from '../types';
 import {useTheme} from '../theme/ThemeContext';
 import {AppTheme} from '../theme/themes';
+import Seekbar from '../components/Seekbar';
 
-const STORAGE_KEYS = {
-  apiKey: 'mimo-tts-api-key',
-  endpoint: 'mimo-tts-endpoint',
-  format: 'mimo-tts-format',
-  voice: 'mimo-tts-voice',
-  model: 'mimo-tts-model',
-  assistantText: 'mimo-tts-assistant-text',
-  userPrompt: 'mimo-tts-user-prompt',
-  customStyles: 'mimo-tts-custom-styles',
-  selectedStyles: 'mimo-tts-selected-styles',
-  selectedTemplateId: 'mimo-tts-template-id',
-  history: 'mimo-tts-history',
-};
+const AudioPlayer = NativeModules.AudioPlayer as AudioPlayerModule;
 
 type StatusType = 'idle' | 'loading' | 'success' | 'error';
 
 /** 将 PCM16 原始 base64 数据包装为 WAV base64，使 MediaPlayer 可播放 */
+// atob/btoa: available in Hermes engine (RN 0.72+) and declared in types/declarations.d.ts
 function pcm16ToWavBase64(pcmBase64: string, sampleRate = 24000): string {
-  // base64 decode
   const raw = atob(pcmBase64);
   const pcmLen = raw.length;
   const header = new ArrayBuffer(44);
@@ -73,17 +76,16 @@ function pcm16ToWavBase64(pcmBase64: string, sampleRate = 24000): string {
 
   // 合并 header + pcm 并 base64 encode
   const hdrBytes = new Uint8Array(header);
-  const CHUNK = 8192;
   const parts: string[] = [];
-  for (let i = 0; i < hdrBytes.length; i += CHUNK) {
-    parts.push(String.fromCharCode(...hdrBytes.subarray(i, i + CHUNK)));
+  for (let i = 0; i < hdrBytes.length; i += WAV_CHUNK_SIZE) {
+    parts.push(String.fromCharCode(...hdrBytes.subarray(i, i + WAV_CHUNK_SIZE)));
   }
   // raw 已经是 binary string，直接拼接
   parts.push(raw);
   return btoa(parts.join(''));
 }
 
-export default function HomeScreen({navigation}: any) {
+export default function HomeScreen({navigation}: {navigation: NavigationProp}) {
   const theme = useTheme();
   const [config, setConfig] = useState<MiMoConfig>({
     apiKey: '',
@@ -126,6 +128,8 @@ export default function HomeScreen({navigation}: any) {
       if (records.length > 0) {
         loadRecord(records[0]);
       }
+    }).then(() => {
+      initialLoadDone.current = true;
     });
     const unsubscribe = navigation.addListener('focus', loadConfig);
     return unsubscribe;
@@ -153,11 +157,10 @@ export default function HomeScreen({navigation}: any) {
   // Poll playback position
   useEffect(() => {
     if (!isAudioActive) return;
-    const {AudioPlayer} = NativeModules;
     AudioPlayer.getDuration().then((d: number) => setPlaybackDuration(d));
     const id = setInterval(() => {
       AudioPlayer.getCurrentPosition().then((p: number) => setPlaybackPosition(p));
-    }, 250);
+    }, PLAYBACK_POLL_INTERVAL_MS);
     return () => clearInterval(id);
   }, [isAudioActive]);
 
@@ -198,7 +201,6 @@ export default function HomeScreen({navigation}: any) {
     } else {
       applyTemplate(TEMPLATE_LIBRARY[0]);
     }
-    initialLoadDone.current = true;
   }
 
   function saveLastInput() {
@@ -208,11 +210,10 @@ export default function HomeScreen({navigation}: any) {
       [STORAGE_KEYS.customStyles, customStyles],
       [STORAGE_KEYS.selectedStyles, JSON.stringify(selectedStyles)],
       [STORAGE_KEYS.selectedTemplateId, selectedTemplateId],
-    ]);
+    ]).catch(err => console.warn('Failed to save last input:', err));
   }
 
   // ── 记录管理 ──────────────────────────────────────────────────────
-  const MAX_HISTORY = 20;
 
   async function loadHistory(): Promise<SynthesisRecord[]> {
     const raw = await AsyncStorage.getItem(STORAGE_KEYS.history);
@@ -224,29 +225,30 @@ export default function HomeScreen({navigation}: any) {
     }
   }
 
-  async function saveHistory(records: SynthesisRecord[]) {
-    setHistory(records);
-    await AsyncStorage.setItem(STORAGE_KEYS.history, JSON.stringify(records));
-  }
-
   async function addRecord(record: SynthesisRecord) {
-    const updated = [record, ...history].slice(0, MAX_HISTORY);
-    // 删除超出限制的旧音频文件
-    if (updated.length < history.length + 1) {
-      const removed = history.slice(MAX_HISTORY - 1);
-      for (const r of removed) {
-        RNFS.exists(r.audioPath).then(exists => {
-          if (exists) RNFS.unlink(r.audioPath);
-        });
+    setHistory(prev => {
+      const updated = [record, ...prev].slice(0, MAX_HISTORY);
+      // When the list was already at capacity, the last item(s) get trimmed.
+      // prev.slice(MAX_HISTORY - 1) returns exactly the items that were removed.
+      if (prev.length >= MAX_HISTORY) {
+        const removedRecords = prev.slice(MAX_HISTORY - 1);
+        for (const r of removedRecords) {
+          RNFS.exists(r.audioPath).then(exists => {
+            if (exists) RNFS.unlink(r.audioPath);
+          });
+        }
       }
-    }
-    await saveHistory(updated);
+      AsyncStorage.setItem(STORAGE_KEYS.history, JSON.stringify(updated))
+        .catch(err => console.warn('Failed to save history:', err));
+      return updated;
+    });
   }
 
   async function deleteRecord(id: string) {
     const target = history.find(r => r.id === id);
     const updated = history.filter(r => r.id !== id);
-    await saveHistory(updated);
+    setHistory(updated);
+    await AsyncStorage.setItem(STORAGE_KEYS.history, JSON.stringify(updated));
     if (target) {
       const exists = await RNFS.exists(target.audioPath);
       if (exists) await RNFS.unlink(target.audioPath);
@@ -290,10 +292,10 @@ export default function HomeScreen({navigation}: any) {
       assistantInputRef.current?.setNativeProps({
         selection: {start: newPos, end: newPos},
       });
-    }, 50);
+    }, TAG_INSERT_DELAY_MS);
   }
 
-  function handleAssistantSelectionChange(event: any) {
+  function handleAssistantSelectionChange(event: NativeSyntheticEvent<TextInputSelectionChangeEventData>) {
     const {selection} = event.nativeEvent;
     if (selection) {
       setCursorPos(selection.start ?? 0);
@@ -380,7 +382,7 @@ export default function HomeScreen({navigation}: any) {
         voice: config.voice,
         format: config.audioFormat,
       };
-      addRecord(record);
+      await addRecord(record);
     } catch (error: any) {
       setStatus('error');
       setStatusText('请求失败');
@@ -394,7 +396,6 @@ export default function HomeScreen({navigation}: any) {
     if (!audioPath) return;
     try {
       setPlaybackState('playing');
-      const {AudioPlayer} = NativeModules;
       await AudioPlayer.play(audioPath);
       setPlaybackState('idle');
     } catch (error: any) {
@@ -405,7 +406,6 @@ export default function HomeScreen({navigation}: any) {
 
   async function handleStopAudio() {
     try {
-      const {AudioPlayer} = NativeModules;
       await AudioPlayer.stop();
       setPlaybackState('idle');
     } catch (error: any) {
@@ -416,8 +416,7 @@ export default function HomeScreen({navigation}: any) {
   async function handlePauseAudio() {
     try {
       setPlaybackState('paused');
-      const {AudioPlayer} = NativeModules;
-      AudioPlayer.pause(); // fire-and-forget
+      await AudioPlayer.pause();
     } catch (error: any) {
       setPlaybackState('idle');
     }
@@ -426,8 +425,7 @@ export default function HomeScreen({navigation}: any) {
   async function handleResumeAudio() {
     try {
       setPlaybackState('playing');
-      const {AudioPlayer} = NativeModules;
-      AudioPlayer.resume(); // fire-and-forget，播放结束由 play() 的 Promise 决定
+      await AudioPlayer.resume();
     } catch (error: any) {
       setPlaybackState('idle');
     }
@@ -435,56 +433,30 @@ export default function HomeScreen({navigation}: any) {
 
   function handleSeek(position: number) {
     setPlaybackPosition(position);
-    NativeModules.AudioPlayer.seekTo(position);
+    AudioPlayer.seekTo(position);
   }
 
   function handleSpeedChange(speed: number) {
     setPlaybackSpeed(speed);
-    NativeModules.AudioPlayer.setSpeed(speed);
+    AudioPlayer.setSpeed(speed);
   }
 
   function getStatusColor(): string {
     switch (status) {
-      case 'loading': return '#8a4f18';
-      case 'success': return '#1e7f53';
-      case 'error': return '#b33535';
-      default: return '#6b5646';
+      case 'loading': return theme.statusLoading;
+      case 'success': return theme.statusSuccess;
+      case 'error': return theme.statusError;
+      default: return theme.statusIdle;
     }
   }
 
   function getStatusBgColor(): string {
     switch (status) {
-      case 'loading': return 'rgba(244, 179, 112, 0.2)';
-      case 'success': return 'rgba(30, 127, 83, 0.14)';
-      case 'error': return 'rgba(179, 53, 53, 0.12)';
-      default: return 'rgba(94, 70, 47, 0.08)';
+      case 'loading': return theme.statusLoadingBg;
+      case 'success': return theme.statusSuccessBg;
+      case 'error': return theme.statusErrorBg;
+      default: return theme.statusIdleBg;
     }
-  }
-
-  function Seekbar({value, max, onSeek}: {value: number; max: number; onSeek: (v: number) => void}) {
-    const [trackWidth, setTrackWidth] = useState(0);
-    const ratio = max > 0 ? value / max : 0;
-
-    function handleTouch(e: any) {
-      const x = Math.max(0, Math.min(e.nativeEvent.locationX, trackWidth));
-      const newPos = (x / trackWidth) * max;
-      onSeek(newPos);
-    }
-
-    return (
-      <View
-        style={seekbarStyles.trackWrapper}
-        onLayout={e => setTrackWidth(e.nativeEvent.layout.width)}
-        onStartShouldSetResponder={() => true}
-        onMoveShouldSetResponder={() => true}
-        onResponderGrant={handleTouch}
-        onResponderMove={handleTouch}>
-        <View style={seekbarStyles.track}>
-          <View style={[seekbarStyles.fill, {width: `${ratio * 100}%`}]} />
-          <View style={[seekbarStyles.thumb, {left: `${ratio * 100}%`}]} />
-        </View>
-      </View>
-    );
   }
 
   function formatTime(ms: number): string {
@@ -495,7 +467,6 @@ export default function HomeScreen({navigation}: any) {
   }
 
   const styles = makeStyles(theme);
-  const seekbarStyles = makeSeekbarStyles(theme);
   const finalContent = buildFinalContent();
   const canPlay = status === 'success' && !!audioPath;
 
@@ -811,7 +782,6 @@ export default function HomeScreen({navigation}: any) {
 }
 
 const FAB_SIZE_SYNTH = 52;
-const FAB_SIZE_PLAY = 60;
 
 function makeStyles(theme: AppTheme) { return StyleSheet.create({
   root: {
@@ -999,7 +969,7 @@ function makeStyles(theme: AppTheme) { return StyleSheet.create({
     color: theme.textPrimary,
   },
   codeBlock: {
-    backgroundColor: '#261a11',
+    backgroundColor: theme.codeBlockBg,
     borderRadius: 14,
     padding: 14,
     minHeight: 80,
@@ -1046,27 +1016,8 @@ function makeStyles(theme: AppTheme) { return StyleSheet.create({
     height: FAB_SIZE_SYNTH,
     backgroundColor: theme.accentDark,
   },
-  fabPlay: {
-    width: FAB_SIZE_PLAY,
-    height: FAB_SIZE_PLAY,
-    backgroundColor: theme.accent,
-  },
   fabDisabled: {
     backgroundColor: theme.disabled,
-  },
-  fabRow: {
-    flexDirection: 'row',
-    gap: 10,
-  },
-  fabStop: {
-    width: 46,
-    height: 46,
-    backgroundColor: '#b33535',
-  },
-  fabPause: {
-    width: 46,
-    height: 46,
-    backgroundColor: '#8a4f18',
   },
   // ── 底部播放控制栏 ──────────────────────────────────────────────
   bottomBar: {
@@ -1167,7 +1118,7 @@ function makeStyles(theme: AppTheme) { return StyleSheet.create({
     width: 32,
     height: 32,
     borderRadius: 16,
-    backgroundColor: '#b33535',
+    backgroundColor: theme.statusError,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -1210,40 +1161,9 @@ function makeStyles(theme: AppTheme) { return StyleSheet.create({
     backgroundColor: theme.accent,
   },
   ctrlBtnPause: {
-    backgroundColor: '#8a4f18',
+    backgroundColor: theme.statusLoading,
   },
   ctrlBtnStop: {
-    backgroundColor: '#b33535',
-  },
-}); }
-
-function makeSeekbarStyles(theme: AppTheme) { return StyleSheet.create({
-  trackWrapper: {
-    flex: 1,
-    height: 28,
-    justifyContent: 'center',
-  },
-  track: {
-    height: 4,
-    borderRadius: 2,
-    backgroundColor: theme.border,
-    overflow: 'visible',
-  },
-  fill: {
-    height: 4,
-    borderRadius: 2,
-    backgroundColor: theme.accent,
-    position: 'absolute',
-    top: 0,
-    left: 0,
-  },
-  thumb: {
-    position: 'absolute',
-    top: -5,
-    width: 14,
-    height: 14,
-    borderRadius: 7,
-    backgroundColor: theme.accent,
-    marginLeft: -7,
+    backgroundColor: theme.statusError,
   },
 }); }

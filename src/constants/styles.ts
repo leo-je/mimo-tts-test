@@ -63,3 +63,25 @@ export const DEFAULT_CONFIG = {
   audioFormat: 'wav',
   voice: 'mimo_default',
 };
+
+// ── Storage Keys ───────────────────────────────────────────────────────
+export const STORAGE_KEYS = {
+  apiKey: 'mimo-tts-api-key',
+  endpoint: 'mimo-tts-endpoint',
+  format: 'mimo-tts-format',
+  voice: 'mimo-tts-voice',
+  model: 'mimo-tts-model',
+  assistantText: 'mimo-tts-assistant-text',
+  userPrompt: 'mimo-tts-user-prompt',
+  customStyles: 'mimo-tts-custom-styles',
+  selectedStyles: 'mimo-tts-selected-styles',
+  selectedTemplateId: 'mimo-tts-template-id',
+  history: 'mimo-tts-history',
+};
+
+// ── Magic Numbers ──────────────────────────────────────────────────────
+export const PLAYBACK_POLL_INTERVAL_MS = 250;
+export const MAX_HISTORY = 20;
+export const TAG_INSERT_DELAY_MS = 50;
+export const WAV_CHUNK_SIZE = 8192;
+export const API_TIMEOUT_MS = 30000;
