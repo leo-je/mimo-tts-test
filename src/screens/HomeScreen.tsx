@@ -13,7 +13,9 @@ import {
   NativeSyntheticEvent,
   TextInputSelectionChangeEventData,
   Modal,
+  Share as RNShare,
 } from 'react-native';
+import RNS from 'react-native-share';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import RNFS from 'react-native-fs';
 import {Picker} from '@react-native-picker/picker';
@@ -441,6 +443,25 @@ export default function HomeScreen({navigation}: {navigation: NavigationProp}) {
     AudioPlayer.setSpeed(speed);
   }
 
+  async function handleShare() {
+    if (!audioPath) {
+      Alert.alert('提示', '暂无可分享的音频');
+      return;
+    }
+    const fileUrl = `file://${audioPath}`;
+    try {
+      // react-native-share: 能真正发送音频文件
+      await RNS.open({url: fileUrl, type: 'audio/wav', failOnCancel: false});
+    } catch {
+      // 降级到系统内置分享（仅能分享文字，但不会无反应）
+      try {
+        await RNShare.share({url: fileUrl, message: '来自 MiMo TTS 的语音合成'});
+      } catch (err: any) {
+        Alert.alert('分享失败', err?.message || '无法分享音频');
+      }
+    }
+  }
+
   function getStatusColor(): string {
     switch (status) {
       case 'loading': return theme.statusLoading;
@@ -677,6 +698,12 @@ export default function HomeScreen({navigation}: {navigation: NavigationProp}) {
                 </Text>
               </TouchableOpacity>
             ))}
+            <TouchableOpacity
+              style={styles.shareBtn}
+              onPress={handleShare}>
+              <Icon name="share" size={16} color={theme.textSecondary} />
+              <Text style={styles.shareBtnText}>转发</Text>
+            </TouchableOpacity>
           </View>
           <View style={styles.playbackRow}>
             <Text style={styles.timeText}>{formatTime(playbackPosition)}</Text>
@@ -1048,6 +1075,21 @@ function makeStyles(theme: AppTheme) { return StyleSheet.create({
     justifyContent: 'center',
     flexDirection: 'row',
     position: 'relative',
+  },
+  shareBtn: {
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: theme.accentSubtle,
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexDirection: 'row',
+    paddingHorizontal: 10,
+    gap: 4,
+  },
+  shareBtnText: {
+    fontSize: 12,
+    color: theme.textSecondary,
+    fontWeight: '600',
   },
   historyBadge: {
     position: 'absolute',
