@@ -448,17 +448,10 @@ export default function HomeScreen({navigation}: {navigation: NavigationProp}) {
       Alert.alert('提示', '暂无可分享的音频');
       return;
     }
-    const fileUrl = `file://${audioPath}`;
     try {
-      // react-native-share: 能真正发送音频文件
-      await RNS.open({url: fileUrl, type: 'audio/wav', failOnCancel: false});
-    } catch {
-      // 降级到系统内置分享（仅能分享文字，但不会无反应）
-      try {
-        await RNShare.share({url: fileUrl, message: '来自 MiMo TTS 的语音合成'});
-      } catch (err: any) {
-        Alert.alert('分享失败', err?.message || '无法分享音频');
-      }
+      await RNS.open({url: `file://${audioPath}`, type: 'audio/wav', failOnCancel: false});
+    } catch (err: any) {
+      // User cancelled — no action needed
     }
   }
 
