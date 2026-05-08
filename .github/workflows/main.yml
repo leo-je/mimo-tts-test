@@ -65,53 +65,11 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           TAG=$(date "+%Y%m%d%H%M%S")
+          NOTES=$(git log -1 --format=%B)
           APK_DIR="android/app/build/outputs/apk/release"
           mv "$APK_DIR/app-release.apk" "$APK_DIR/mimo-tts-test-release.${TAG}.apk"
           cd "$APK_DIR"
           zip "mimo-tts-test-release.${TAG}.zip" "mimo-tts-test-release.${TAG}.apk"
           echo "Creating release: $TAG"
-          gh release create "$TAG" "mimo-tts-test-release.${TAG}.apk" "mimo-tts-test-release.${TAG}.zip" \
-            --title "$TAG" --notes "Auto generated release APK" --prerelease
-
-  ios:
-    runs-on: macos-14
-    permissions:
-      contents: write
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Set up Node.js 20
-        uses: actions/setup-node@v4
-        with:
-          node-version: 20
-          cache: npm
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Install CocoaPods
-        working-directory: ios
-        run: |
-          gem install cocoapods
-          pod install --repo-update
-
-      - name: Build iOS Release
-        working-directory: ios
-        run: |
-          xcodebuild \
-            -workspace MiMoTTSTest.xcworkspace \
-            -scheme MiMoTTSTest \
-            -configuration Release \
-            -sdk iphoneos \
-            -destination generic/platform=iOS \
-            -archivePath $PWD/build/MiMoTTSTest.xcarchive \
-            archive \
-            CODE_SIGNING_ALLOWED=NO
-
-      - name: Upload xcarchive
-        uses: actions/upload-artifact@v4
-        with:
-          name: mimo-tts-test-ios
-          path: ios/build/MiMoTTSTest.xcarchive
+          gh release create "[release]$TAG" "mimo-tts-test-release.${TAG}.apk" "mimo-tts-test-release.${TAG}.zip" \
+            --title "[release]$TAG" --notes "$NOTES" --prerelease
